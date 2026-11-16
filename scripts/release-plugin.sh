@@ -55,6 +55,14 @@ build_packer
 scratch work
 catalog="$work/catalog.json"
 fetch_catalog "$catalog"
+# A plugin whose folder was removed from plugins/ leaves the catalog, so no machine installs it again.
+for id in $(jq -r '.plugins | keys[]' "$catalog"); do
+  if [ ! -f "$repo/plugins/$id/plugin.toml" ]; then
+    step "$id is no longer in plugins/: removed from the catalog"
+    jq --arg id "$id" 'del(.plugins[$id])' "$catalog" > "$catalog.next"
+    mv "$catalog.next" "$catalog"
+  fi
+done
 if [ "$(jq -r '.frame.interface // empty' "$catalog")" = "$(interface_digest)" ]; then
   min_frame="$(jq -r '.frame.interface_since' "$catalog")"
 else

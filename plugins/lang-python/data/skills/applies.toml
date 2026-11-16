@@ -1,3 +1,0 @@
-# The Python guide is loaded into every session of a Python project (never a choice).
-[python]
-always = true

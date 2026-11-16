@@ -1,3 +1,0 @@
-# The C/C++ guide is loaded into every session of a C or C++ project (never a choice).
-[cpp]
-always = true

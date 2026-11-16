@@ -1,3 +1,0 @@
-# The Java guide is loaded into every session of a Java project (never a choice).
-[java]
-always = true

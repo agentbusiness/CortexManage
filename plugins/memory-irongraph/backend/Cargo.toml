@@ -47,18 +47,6 @@ blake3 = { version = "1.8", features = ["pure"] }
 
 [dev-dependencies]
 tempfile = "3.27"
-# The language plugins, served in-process to the tests by an in-test frame peer (tests/common): the
-# code graph's facts in the tests are the real plugins' (`<category>.extract`, `describe`).
-cc-lang-rust = { path = "../../lang-rust/backend" }
-cc-lang-python = { path = "../../lang-python/backend" }
-cc-lang-typescript = { path = "../../lang-typescript/backend" }
-cc-lang-shell = { path = "../../lang-shell/backend" }
-cc-lang-go = { path = "../../lang-go/backend" }
-cc-lang-java = { path = "../../lang-java/backend" }
-cc-lang-cpp = { path = "../../lang-cpp/backend" }
-cc-lang-docker = { path = "../../lang-docker/backend" }
-cc-lang-web = { path = "../../lang-web/backend" }
-cc-lang-markdown = { path = "../../markdown/backend" }
 
 [profile.release]
 debug = "line-tables-only"

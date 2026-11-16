@@ -1,7 +1,6 @@
 #!/bin/bash
 # Build CortexManage.app: the frame, its Electron shell, every plugin built and packed (with its data;
-# the window is the workbench plugin's, cx the tools plugin's) and the app's configuration. No source
-# code goes into the app.
+# the window is the workbench plugin's) and the app's configuration. No source code goes into the app.
 #
 #   scripts/build-app.sh [out-dir] [--live]     # default dist/  ->  <out-dir>/CortexManage.app
 #

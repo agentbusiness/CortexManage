@@ -1,3 +1,0 @@
-# The web guide is loaded into every session of an HTML/CSS project (never a choice).
-[web]
-always = true

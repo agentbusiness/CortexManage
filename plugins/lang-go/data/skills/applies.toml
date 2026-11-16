@@ -1,3 +1,0 @@
-# The Go guide is loaded into every session of a Go project (never a choice).
-[go]
-always = true
