@@ -1,0 +1,243 @@
+//! The plugin's records in the app's graph (`memory@1`), written in order.
+//!
+//! Every put and retire goes through one writer task, in the order it was asked for, in the
+//! WORKSPACE layer. The memory plugin may start after this one: the writer waits for it (a call it
+//! cannot serve yet is tried again each second). A batch the memory plugin refuses is logged and
+//! dropped; [`Graph::flush`] reports it.
+
+use cc_protocol::contracts::memory::{GraphEdge, GraphLayer, GraphNode, GraphPutParams, GraphQueryParams, GraphQueryResult, GraphRef, GraphRetireParams, methods};
+use cc_protocol::{BoxFuture, Ctx, RpcError, codes};
+use serde::de::DeserializeOwned;
+use serde_json::{Map, Value, json};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
+
+/// Between two attempts while the memory plugin does not serve.
+const RETRY: Duration = Duration::from_secs(1);
+/// How long a read waits for the memory plugin before it gives up.
+const READ_WAIT: Duration = Duration::from_secs(120);
+
+/// The label of this computer's root node.
+const MACHINE: &str = "Machine";
+
+/// This computer's root node (the writer fills in its key). Nothing is kept unconnected, so every
+/// record of this plugin hangs on it.
+pub fn machine() -> GraphRef {
+    GraphRef { label: MACHINE.into(), key: String::new() }
+}
+
+/// How the plugin calls the frame.
+pub type Caller = Arc<dyn Fn(&str, Value) -> BoxFuture<'static, Result<Value, RpcError>> + Send + Sync>;
+
+/// The frame connection as a [`Caller`].
+pub fn ctx_caller(ctx: &Ctx) -> Caller {
+    let ctx = ctx.clone();
+    Arc::new(move |method: &str, params: Value| {
+        let (ctx, method) = (ctx.clone(), method.to_owned());
+        Box::pin(async move { ctx.call(&method, params).await })
+    })
+}
+
+/// A node by its label and key.
+pub fn at(label: &str, key: &str) -> GraphRef {
+    GraphRef { label: label.into(), key: key.into() }
+}
+
+pub fn node(label: &str, key: &str, props: Map<String, Value>) -> GraphNode {
+    GraphNode { label: label.into(), key: key.into(), props, temporal: Map::new() }
+}
+
+pub fn edge(from: (&str, &str), rel: &str, to: GraphRef) -> GraphEdge {
+    GraphEdge { from: GraphRef { label: from.0.into(), key: from.1.into() }, rel: rel.into(), to, props: Map::new(), temporal: Map::new() }
+}
+
+/// An answer that means the memory plugin does not serve (yet).
+fn waiting(error: &RpcError) -> bool {
+    matches!(error.code.as_str(), codes::UNAVAILABLE | codes::CONNECTION_CLOSED | codes::DRAINING | codes::UNKNOWN_METHOD)
+}
+
+enum Op {
+    Put(GraphPutParams),
+    Retire(GraphRetireParams),
+    /// Answers whether every write since the last flush was taken.
+    Flush(oneshot::Sender<bool>),
+}
+
+pub struct Graph {
+    ops: mpsc::UnboundedSender<Op>,
+    queued: Mutex<Option<mpsc::UnboundedReceiver<Op>>>,
+    caller: Mutex<Option<Caller>>,
+}
+
+impl Default for Graph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Graph {
+    /// Writes asked for before [`Graph::start`] wait in order.
+    pub fn new() -> Self {
+        let (ops, queued) = mpsc::unbounded_channel();
+        Self { ops, queued: Mutex::new(Some(queued)), caller: Mutex::new(None) }
+    }
+
+    /// Start writing through `caller` (once; a second call does nothing). Runs inside Tokio.
+    pub fn start(&self, caller: Caller) {
+        let Some(queued) = self.queued.lock().unwrap_or_else(|p| p.into_inner()).take() else { return };
+        *self.caller.lock().unwrap_or_else(|p| p.into_inner()) = Some(caller.clone());
+        tokio::spawn(write_all(caller, queued));
+    }
+
+    fn caller(&self) -> Result<Caller, RpcError> {
+        self.caller.lock().unwrap_or_else(|p| p.into_inner()).clone().ok_or_else(|| RpcError::new(codes::UNAVAILABLE, "not connected to the frame yet"))
+    }
+
+    /// Merge nodes and edges (WORKSPACE layer).
+    pub fn put(&self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>) {
+        if nodes.is_empty() && edges.is_empty() {
+            return;
+        }
+        let _ = self.ops.send(Op::Put(GraphPutParams { nodes, edges, layer: GraphLayer::Workspace, at_ms: None }));
+    }
+
+    /// Mark nodes as gone (`ended_ms`); a later put brings one back.
+    pub fn retire(&self, refs: Vec<GraphRef>, reason: &str) {
+        if refs.is_empty() {
+            return;
+        }
+        let _ = self.ops.send(Op::Retire(GraphRetireParams { refs, reason: Some(reason.into()), at_ms: None }));
+    }
+
+    /// Wait until the writes asked for so far are done: true when the memory plugin took them all.
+    pub async fn flush(&self) -> bool {
+        let (done, answer) = oneshot::channel();
+        if self.ops.send(Op::Flush(done)).is_err() {
+            return false;
+        }
+        answer.await.unwrap_or(false)
+    }
+
+    /// One read-only statement; each row's first column, a node, as its properties.
+    pub async fn nodes(&self, cypher: &str, params: Map<String, Value>, limit: u32) -> Result<Vec<Map<String, Value>>, RpcError> {
+        let query = GraphQueryParams { cypher: cypher.into(), params, limit: Some(limit) };
+        let result: GraphQueryResult = read(&self.caller()?, methods::GRAPH_QUERY, json!(query)).await?;
+        Ok(result
+            .rows
+            .into_iter()
+            .filter_map(|row| row.into_iter().next())
+            .filter_map(|node| match node.get("properties") {
+                Some(Value::Object(props)) => Some(props.clone()),
+                _ => None,
+            })
+            .collect())
+    }
+}
+
+/// A read, waiting a bounded time for the memory plugin.
+async fn read<T: DeserializeOwned>(caller: &Caller, method: &str, params: Value) -> Result<T, RpcError> {
+    let started = std::time::Instant::now();
+    loop {
+        match caller(method, params.clone()).await {
+            Ok(value) => return serde_json::from_value(value).map_err(|e| RpcError::internal(format!("{method}: unexpected answer: {e}"))),
+            Err(error) if waiting(&error) && started.elapsed() < READ_WAIT => {
+                if started.elapsed() < RETRY {
+                    tracing::info!(method, error = %error.message, "the memory plugin does not serve yet; waiting");
+                }
+                tokio::time::sleep(RETRY).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+/// A write, tried again for as long as the memory plugin does not serve.
+async fn write(caller: &Caller, method: &str, params: Value) -> Result<Value, RpcError> {
+    let mut attempts: u64 = 0;
+    loop {
+        match caller(method, params.clone()).await {
+            Err(error) if waiting(&error) => {
+                if attempts.is_multiple_of(60) {
+                    tracing::info!(method, error = %error.message, "the memory plugin does not serve yet; the write waits");
+                }
+                attempts += 1;
+                tokio::time::sleep(RETRY).await;
+            }
+            outcome => return outcome,
+        }
+    }
+}
+
+/// Fill in the machine node's key on every edge that names it without one.
+async fn with_machine(caller: &Caller, key: &mut Option<String>, params: &mut GraphPutParams) -> Result<(), RpcError> {
+    let needs = |end: &GraphRef| end.label == MACHINE && end.key.is_empty();
+    if !params.edges.iter().any(|edge| needs(&edge.from) || needs(&edge.to)) {
+        return Ok(());
+    }
+    if key.is_none() {
+        let info = write(caller, methods::GRAPH_MACHINE, json!({})).await?;
+        *key = info.get("key").and_then(Value::as_str).map(str::to_owned);
+    }
+    let Some(found) = key.clone() else {
+        return Err(RpcError::internal("the memory plugin did not name this computer's node"));
+    };
+    for edge in &mut params.edges {
+        if needs(&edge.from) {
+            edge.from.key = found.clone();
+        }
+        if needs(&edge.to) {
+            edge.to.key = found.clone();
+        }
+    }
+    Ok(())
+}
+
+async fn write_all(caller: Caller, mut ops: mpsc::UnboundedReceiver<Op>) {
+    let mut all_taken = true;
+    let mut machine_key: Option<String> = None;
+    while let Some(op) = ops.recv().await {
+        let outcome = match op {
+            Op::Flush(done) => {
+                let _ = done.send(std::mem::replace(&mut all_taken, true));
+                continue;
+            }
+            Op::Retire(params) => write(&caller, methods::GRAPH_RETIRE, json!(params)).await,
+            Op::Put(mut params) => match with_machine(&caller, &mut machine_key, &mut params).await {
+                Ok(()) => write(&caller, methods::GRAPH_PUT, json!(params)).await,
+                Err(error) => Err(error),
+            },
+        };
+        if let Err(error) = outcome {
+            tracing::warn!(error = %error.message, "the memory plugin refused a write; it is dropped");
+            all_taken = false;
+        }
+    }
+}
+
+/// Properties from `(name, value)` pairs; `Value::Null` removes a property.
+pub fn props<const N: usize>(pairs: [(&str, Value); N]) -> Map<String, Value> {
+    pairs.into_iter().map(|(name, value)| (name.to_owned(), value)).collect()
+}
+
+/// A list of texts as a property. An empty list is written as `null` (the property is removed):
+/// a list with nothing in it has no scalar type for the graph to keep.
+pub fn list(items: &[String]) -> Value {
+    if items.is_empty() { Value::Null } else { json!(items) }
+}
+
+pub fn text(props: &Map<String, Value>, name: &str) -> String {
+    props.get(name).and_then(Value::as_str).unwrap_or_default().to_owned()
+}
+
+pub fn number(props: &Map<String, Value>, name: &str) -> u64 {
+    props.get(name).and_then(Value::as_u64).unwrap_or_default()
+}
+
+pub fn flag(props: &Map<String, Value>, name: &str) -> bool {
+    props.get(name).and_then(Value::as_bool).unwrap_or(false)
+}
+
+pub fn texts(props: &Map<String, Value>, name: &str) -> Vec<String> {
+    props.get(name).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
+}

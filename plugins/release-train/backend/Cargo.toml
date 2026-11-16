@@ -1,0 +1,32 @@
+[package]
+name = "cc-train"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.94"
+publish = false
+description = "CortexManage train@1 plugin: soak, the daily release train per repository, release notes and take back."
+
+# Own workspace: the plugin builds (and ships) on its own.
+[workspace]
+
+[lib]
+name = "cc_train"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cc-train"
+path = "src/main.rs"
+
+[dependencies]
+cc-protocol = { path = "../../../protocol", features = ["host", "manage", "memory", "runner", "train"] }
+# Local time: the train leaves at a time of day on this computer's clock.
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+toml = "1.1.8"
+uuid = { version = "1.23", features = ["v4"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

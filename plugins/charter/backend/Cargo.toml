@@ -1,0 +1,29 @@
+[package]
+name = "cc-charter"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.94"
+publish = false
+description = "CortexManage charter@1 plugin: every app's laws, constraints and conventions in the graph, proposals, the printed AGENTS.md and the checks kept by code."
+
+# Own workspace: the plugin builds (and ships) on its own.
+[workspace]
+
+[lib]
+name = "cc_charter"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cc-charter"
+path = "src/main.rs"
+
+[dependencies]
+cc-protocol = { path = "../../../protocol", features = ["charter", "memory"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time"] }
+sha2 = "0.10"
+toml = "1.1.8"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

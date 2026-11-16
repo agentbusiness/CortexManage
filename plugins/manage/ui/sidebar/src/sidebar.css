@@ -1,0 +1,35 @@
+/* workbench.sidebar@1 — repositories in the theme's `.nav` grammar; under each its requests, a
+   package of several drawn as a bracket in the counter colour. */
+#cc .cm-side{flex:1;min-height:0;display:flex;flex-direction:column;padding:18px 0 0;}
+#cc .cm-side .index-h{margin:0 0 12px;}
+#cc .cm-side-scroll{flex:1;min-height:0;overflow:auto;padding:0 14px 16px 0;display:flex;flex-direction:column;gap:2px;}
+#cc .cm-side .nav li{margin-bottom:0;}
+/* A repository left out is listed, greyed. */
+#cc .cm-repo.off .kk,#cc .cm-repo.off .nm{color:var(--unwritten);}
+#cc .cm-side .nav .kk.drift{color:var(--rubric);}
+
+#cc .cm-sess{list-style:none;margin:2px 0 8px;padding:0 0 0 30px;}
+#cc .cm-sess button{
+  width:100%;display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:0 6px;
+  padding:4px 0 5px;border:0;background:transparent;text-align:left;cursor:pointer;
+  font-family:var(--font-reading);font-size:13px;line-height:1.3;color:var(--ink-2);
+}
+#cc .cm-sess button:hover{color:var(--ink);}
+#cc .cm-sess .tt{justify-self:start;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid transparent;}
+#cc .cm-sess .st{font-family:var(--font-apparatus);font-size:8px;font-weight:600;letter-spacing:.12em;color:var(--ink-3);text-transform:uppercase;white-space:nowrap;}
+#cc .cm-sess li.sel button{color:var(--ink);}
+#cc .cm-sess li.sel .tt{border-bottom-color:var(--rubric);}
+#cc .cm-sess li.attn .st{color:var(--rubric);}
+
+/* The package bracket: one rule down the left of the requests that build together. */
+#cc .cm-pk{border-left:1px solid var(--counter);margin:2px 0 8px 30px;padding-left:8px;}
+#cc .cm-pk .cm-sess{padding-left:0;margin:0;}
+#cc .cm-pk>.ap{display:block;padding:3px 0 2px;}
+
+#cc .cm-repo>.inline-error{margin:2px 0 6px 30px;padding:5px 9px;}
+#cc .cm-side-scroll>.inline-error{margin:0 0 8px 9px;}
+#cc .cm-side-scroll>.cm-line{padding-left:9px;}
+#cc .cm-side-form{flex:0 0 auto;border-top:1px solid var(--rule);padding:12px 14px 12px 9px;}
+#cc .cm-side-form>.ap{display:block;margin-bottom:9px;}
+#cc .cm-side-form .inline-error{margin:0;}
+#cc .cm-side-foot{flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;padding:12px 0 16px 9px;margin-right:14px;border-top:1px solid var(--rule);}

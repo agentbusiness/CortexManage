@@ -1,0 +1,19 @@
+/* settings.manage@1 — one grid of label | controls per repository, every line the height of a
+   detent, as the other settings pages are set. */
+#cc .cm-set{display:flex;flex-direction:column;gap:18px;}
+#cc .cm-set-repos{align-self:flex-start;flex-wrap:wrap;max-width:100%;}
+#cc .cm-set-grid{display:grid;grid-template-columns:132px minmax(0,1fr);column-gap:16px;row-gap:8px;align-items:start;}
+#cc .cm-set-grid>.ap{line-height:22px;white-space:nowrap;}
+#cc .cm-set-grid>.cm-set-h{grid-column:1/3;line-height:1;padding:12px 0 6px;border-bottom:1px solid var(--rule);margin-bottom:2px;}
+#cc .cm-set-cell{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;min-height:22px;min-width:0;}
+#cc .cm-set-cell .field{flex:1 1 220px;min-width:0;}
+#cc .cm-set-cell .field.n{flex:0 0 84px;}
+#cc .cm-set-cell .field.t{flex:0 0 64px;}
+#cc .cm-set-cell .field input{font-family:var(--font-reading);font-size:13px;letter-spacing:0;}
+#cc .cm-set-cell .field.n input,#cc .cm-set-cell .field.t input{font-family:var(--font-apparatus);font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:.04em;}
+#cc .cm-set-cell .seg-set{flex:0 0 auto;}
+#cc .cm-set-pair{display:inline-flex;align-items:center;gap:6px;}
+#cc .cm-set-note{font-family:var(--font-reading);font-size:12px;line-height:18px;color:var(--ink-3);}
+#cc .cm-set .cm-area{font-family:var(--font-mono);font-size:11.5px;line-height:1.6;min-height:96px;}
+#cc .cm-set-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+#cc .cm-set-foot .inline-error{margin:0;flex:1 1 260px;}

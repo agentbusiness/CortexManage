@@ -1,0 +1,15 @@
+/* pane.watch@1 — the strip: six facts in two columns, each a faint label over its number. */
+#cc .cm-strip{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--rule);}
+#cc .cm-strip>div{padding:7px 0;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:4px;min-width:0;}
+#cc .cm-strip>div:nth-child(odd){padding-right:10px;}
+#cc .cm-strip>div.wide{grid-column:1/3;padding-right:0;}
+#cc .cm-strip .num{font-size:13px;color:var(--ink);overflow-wrap:anywhere;}
+#cc .cm-strip .num.bad{color:var(--rubric);}
+#cc .cm-strip .now{font-family:var(--font-reading);font-size:13px;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere;}
+
+/* One time CortexManage stepped in: when, what it did and by which rule, the fact, the sentence. */
+#cc .cm-step{padding:8px 0;border-top:1px solid var(--rule);}
+#cc .cm-step:first-of-type{border-top:0;padding-top:0;}
+#cc .cm-step-h{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+#cc .cm-step p{margin:0;font-family:var(--font-reading);font-size:13px;line-height:1.45;color:var(--ink-2);overflow-wrap:anywhere;}
+#cc .cm-step p.said{margin-top:4px;padding-left:9px;border-left:1px solid var(--rule-2);color:var(--ink-3);}

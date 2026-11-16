@@ -1,0 +1,34 @@
+{
+  "name": "@cortex-ui/manage-watch",
+  "version": "0.1.0",
+  "description": "The Watch tab: whether the running job is on track, the rules watching it, and every time CortexManage stepped in.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "cortex": {
+    "id": "manage.watch",
+    "slot": "pane.watch@1",
+    "label": "Watch",
+    "order": 20
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build"
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@cortex/sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "@cortex/sdk": "file:../../../../ui/sdk",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.5"
+  }
+}

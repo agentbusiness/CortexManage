@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "why": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "if_yes": {
+      "type": "string",
+      "maxLength": 240
+    },
+    "if_no": {
+      "type": "string",
+      "maxLength": 240
+    }
+  },
+  "required": [
+    "why",
+    "if_yes",
+    "if_no"
+  ],
+  "additionalProperties": false
+}

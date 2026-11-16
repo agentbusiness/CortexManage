@@ -1,0 +1,30 @@
+[package]
+name = "cc-chatflow-manage"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.94"
+publish = false
+description = "CortexManage chatflow@1 plugin (chatflow-manage): the manager's model questions, one per stage, each with a schema, greedy decoding and a host check."
+
+# Own workspace: the plugin builds (and ships) on its own.
+[workspace]
+
+[[bin]]
+name = "cc-chatflow-manage"
+path = "src/main.rs"
+
+[dependencies]
+cc-protocol = { path = "../../../protocol", features = ["chatflow", "host", "manage", "mesh", "model"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+toml = "1.1.8"
+uuid = { version = "1.23", features = ["v4"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+debug = false
+lto = "thin"

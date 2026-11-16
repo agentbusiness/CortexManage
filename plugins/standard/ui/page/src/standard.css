@@ -1,0 +1,53 @@
+/* page.standard@1: the Standard view. The table is the brief's `.drift` table; everything else is
+   the theme's own (.colhead, .ap, .detent, .sw, .field, .pip). No radius, no shadow, 1px hairlines. */
+#cc .std-page{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;height:100%;overflow:auto;background:var(--ground);}
+#cc .std-page .colhead{flex:0 0 auto;}
+#cc .std-body{display:flex;flex-direction:column;gap:10px;padding:18px 22px 20px 18px;}
+
+#cc .std-tw{overflow-x:auto;border-top:1px solid var(--rule-2);}
+#cc .std-drift{border-collapse:collapse;width:100%;}
+#cc .std-drift th{
+  font-family:var(--font-apparatus);font-size:9px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:10px 12px 8px 0;border-bottom:1px solid var(--rule);vertical-align:bottom;white-space:nowrap;
+}
+#cc .std-drift td{
+  padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top;
+  font-family:var(--font-reading);font-size:13px;line-height:1.45;white-space:nowrap;
+}
+#cc .std-drift td.k{
+  font-family:var(--font-apparatus);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);
+}
+#cc .std-drift .ok{color:var(--ink-3);}
+#cc .std-drift .bad{color:var(--rubric);}
+#cc .std-answer{display:block;}
+
+/* A cell that has files to show: the same text, chosen like any other detent state. */
+#cc .std-cell{
+  border:0;border-bottom:1px solid transparent;background:transparent;padding:0;margin:0;cursor:pointer;
+  font:inherit;color:inherit;text-align:left;
+}
+#cc .std-cell:hover{border-bottom-color:var(--rubric-deep);}
+#cc .std-cell[aria-pressed="true"]{border-bottom-color:var(--rubric);}
+#cc .std-cell:focus-visible{outline:1px solid var(--rubric);outline-offset:2px;}
+
+#cc .std-block{border:1px solid var(--rule);padding:12px 14px;}
+#cc .std-block .hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+#cc .std-files{list-style:none;margin:0;padding:0;font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--ink-2);overflow-wrap:anywhere;}
+
+#cc .std-sub{font-family:var(--font-reading);font-size:13px;font-style:italic;color:var(--ink-3);margin:0;max-width:96ch;}
+#cc .std-note{font-family:var(--font-reading);font-size:14px;color:var(--ink-2);margin:0;max-width:72ch;}
+#cc .std-problem{font-family:var(--font-reading);font-size:14px;color:var(--rubric);margin:0;padding:8px 12px;border:1px solid var(--rubric-deep);background:var(--rubric-wash);}
+
+#cc .std-acts{display:flex;align-items:center;gap:6px;}
+#cc .std-lock{
+  margin:0;padding:12px 14px;border:1px solid var(--rule);max-height:320px;overflow:auto;
+  font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--ink-2);white-space:pre;
+}
+
+#cc .std-section{display:flex;flex-direction:column;border-top:1px solid var(--rule-2);margin-top:8px;padding-top:14px;}
+#cc .std-section > .ap{margin-bottom:6px;}
+#cc .std-member{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule);}
+#cc .std-who{display:flex;flex-direction:column;gap:5px;flex:0 0 168px;min-width:0;}
+#cc .std-root{flex:1;min-width:120px;}
+#cc .std-root input{font-family:var(--font-mono);letter-spacing:0;}
+#cc .std-defer{display:flex;align-items:center;gap:8px;flex:0 0 auto;}

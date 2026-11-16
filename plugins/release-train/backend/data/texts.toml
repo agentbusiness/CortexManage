@@ -1,0 +1,27 @@
+# Texts a person reads. `{name}` is filled in by the plugin; a live copy that drops a placeholder
+# is ignored.
+
+busy = "A train for {repo} is already running. Wait for it to finish."
+no_repo = "Name the repository: {repo} is missing."
+no_package = "There is no landed package {package}."
+not_released = "Package {package} is not released yet, so there is nothing to take back."
+already_taken_back = "Package {package} is already being taken back."
+landed_incomplete = "A landed package needs its package id and its repository."
+
+note_nothing = "Nothing to release: no part changed."
+note_failed = "The release did not finish. The packages stay ready for the next train."
+note_plan_failed = "The release could not be planned. The packages stay ready for the next train."
+note_skipped = "This train was skipped."
+note_no_part = "Without a part release"
+note_unsoaked = "{part} also carries {package}, which has not finished its soak: the release script releases everything on the main line."
+no_tail = "The release script gave no output."
+
+take_back_title = "Take back {package}"
+take_back_text = """
+Take back package {package}: a released change is being taken back.
+
+Revert the commits of package {package} on the main line. Its last commit is {commit}. After the revert every part it touched ({parts}) is built from the code as it was before the package, and is released again under its next version.
+
+It is urgent because the change is already released and people have it.
+
+The package carried: {requests}."""

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <title>CortexManage favicon, 32 px cut</title>
+  <rect width="32" height="32" fill="#14171A"/>
+  <!-- the links as whole-pixel bars -->
+  <path d="M15 12h2v10h-2zM6 15h20v2H6zM6 15h2v7H6zM24 15h2v7h-2z" fill="#6E9BB5"/>
+  <rect x="12" y="4" width="8" height="8" fill="#E2603F"/>
+  <rect x="4" y="22" width="6" height="6" fill="#E9EBEC"/>
+  <rect x="13" y="22" width="6" height="6" fill="#E9EBEC"/>
+  <rect x="22" y="22" width="6" height="6" fill="#E9EBEC"/>
+</svg>

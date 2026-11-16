@@ -1,0 +1,104 @@
+# The manager's model-facing settings. Read again for every stage call: an edit of the copy in the
+# live folder (<home>/live/plugins/chatflow-manage/backend/data/) is in use at the next question.
+# A file that does not validate is left out and the shipped one stays in use.
+#
+# Every stage is one question in a new context. A stage with a schema runs without thinking: the
+# grammar holds the whole generation, so a thinking block would take the decision's place.
+
+label = "chatflow-manage-data 1"
+
+# Greedy: the same question decides the same way, and four-bit weights garble sampled JSON first.
+# No presence penalty: a penalty switches the engine's speculative decoding off.
+[sampling.decision]
+temperature = 0.0
+top_p = 1.0
+top_k = 0
+min_p = 0.0
+presence_penalty = 0.0
+
+[limits]
+# Tool calls PLAN's discovery may make before the plan is written.
+plan_tool_calls = 12
+# Most characters of one tool result the model is shown while it looks around (head and tail).
+tool_result_chars = 6000
+# Most characters of one tool result carried into the plan's own question (twelve of them must fit).
+plan_evidence_chars = 3500
+# Most tasks in a plan.
+plan_max_tasks = 12
+# Most characters of a diff DRIFT and CONVERGE are shown.
+diff_chars = 60000
+# Lines `read` gives when the model names none; hits `search` gives.
+read_lines = 160
+search_hits = 20
+# A task's line limit when the plan names none.
+task_limit_lines = 150
+# A call the model plugin refused (restarting, swapping, busy) is tried again for this long (seconds).
+refused_window_s = 600
+
+# tag: the model the stage claims on the mesh. A stronger model under another tag would help
+# VALIDATE and DRIFT most: change their tag here.
+[stage.ASSESS]
+tag = "coding"
+prompts = ["assess"]
+schema = "assess"
+sampling = "decision"
+max_tokens = 900
+
+[stage.MATCH]
+tag = "coding"
+prompts = ["match"]
+schema = "match"
+sampling = "decision"
+max_tokens = 200
+
+# PLAN's reading before the plan: the only call that is offered tools (read, search, tree). Its
+# steps think a little, because choosing what to read next is not a schema.
+[stage.DISCOVER]
+tag = "coding"
+prompts = ["discover"]
+sampling = "decision"
+max_tokens = 400
+effort = "low"
+think_tokens = 512
+
+[stage.PLAN]
+tag = "coding"
+prompts = ["plan", "plan_fields"]
+schema = "plan"
+sampling = "decision"
+max_tokens = 9000
+
+[stage.VALIDATE]
+tag = "coding"
+prompts = ["validate"]
+schema = "validate"
+sampling = "decision"
+max_tokens = 300
+
+[stage.DRIFT]
+tag = "coding"
+prompts = ["drift"]
+schema = "drift"
+sampling = "decision"
+max_tokens = 250
+
+[stage.CONVERGE]
+tag = "coding"
+prompts = ["converge"]
+schema = "converge"
+sampling = "decision"
+max_tokens = 1500
+
+# The only free writing; nothing is decided from it.
+[stage.DIGEST]
+tag = "coding"
+prompts = ["digest"]
+sampling = "decision"
+max_tokens = 160
+
+[stage.WHY]
+tag = "coding"
+prompts = ["why"]
+schema = "why"
+sampling = "decision"
+max_tokens = 400

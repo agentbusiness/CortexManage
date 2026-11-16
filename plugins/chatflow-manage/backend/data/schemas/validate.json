@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "properties": {
+    "necessary": {
+      "type": "boolean"
+    },
+    "sensible": {
+      "type": "boolean"
+    },
+    "fits": {
+      "type": "boolean"
+    },
+    "provable": {
+      "type": "boolean"
+    },
+    "standard_safe": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "verdict": {
+      "enum": [
+        "keep",
+        "cut",
+        "merge",
+        "ask"
+      ]
+    }
+  },
+  "required": [
+    "necessary",
+    "sensible",
+    "fits",
+    "provable",
+    "standard_safe",
+    "reason",
+    "verdict"
+  ],
+  "additionalProperties": false
+}

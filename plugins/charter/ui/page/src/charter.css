@@ -1,0 +1,76 @@
+/* page.charter@1 — rules as ruled rows on the left, the proposal panel on the right. The theme's
+   controls (.detent, .seg-set, .sw, .field, .pip, .ap) are used as they are; what is drawn here is
+   the page's own layout, in the theme's tokens: hairlines, no radius, no shadow. */
+#cc .cx-charter{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;}
+#cc .cx-charter .grow{flex:1;}
+#cc .cx-ch-where{display:flex;align-items:center;gap:8px;padding:10px 16px 9px 18px;border-bottom:1px solid var(--rule);}
+#cc .cx-charter>.inline-error{margin:12px 16px 0 18px;}
+#cc .cx-ch-start{padding:16px 16px 24px 18px;max-width:760px;overflow:auto;}
+
+#cc .cx-ch-split{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.25fr) 1px minmax(0,1fr);}
+#cc .cx-ch-split>div{min-height:0;overflow:auto;}
+#cc .cx-ch-left{padding:4px 16px 24px 18px;}
+#cc .cx-ch-right{padding:16px 16px 24px 16px;display:flex;flex-direction:column;gap:12px;}
+
+/* a level's heading */
+#cc .cx-ch-lvl{display:flex;align-items:center;gap:8px;padding:16px 0 4px;}
+
+/* a rule */
+#cc .cx-ch-rule{
+  display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:2px 8px;align-items:baseline;
+  width:100%;padding:8px 0;border:0;border-bottom:1px solid var(--rule);background:transparent;
+  color:var(--ink);font:inherit;text-align:left;
+}
+#cc button.cx-ch-rule{cursor:pointer;}
+#cc button.cx-ch-rule:hover{background:var(--rubric-wash);}
+#cc .cx-ch-rule.picked{border-bottom-color:var(--rubric);}
+#cc .cx-ch-rule.picked .cx-ch-id{color:var(--rubric);}
+#cc .cx-ch-id{font-family:Archivo,sans-serif;font-size:9.5px;font-weight:600;letter-spacing:.08em;color:var(--ink-3);font-variant-numeric:tabular-nums;}
+#cc .cx-ch-rule.law .cx-ch-id{color:var(--rubric);}
+#cc .cx-ch-tx{font-size:14px;line-height:1.4;overflow-wrap:anywhere;}
+#cc .cx-ch-wy{grid-column:2;font-size:12.5px;line-height:1.4;color:var(--ink-3);font-style:italic;}
+#cc .cx-ch-v{font-family:Archivo,sans-serif;font-size:8.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap;}
+#cc .cx-ch-v.cut{color:var(--rubric);}
+#cc .cx-ch-rule.draft{align-items:start;}
+#cc .cx-ch-rule.draft .cx-ch-id{padding-top:4px;}
+#cc .cx-ch-under{grid-column:2 / 4;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;}
+#cc .cx-ch-wide{grid-column:2 / 4;}
+#cc .cx-ch-rule .inline-error{margin:4px 0 0;}
+
+/* what the app is */
+#cc .cx-ch-ident{font-size:14px;line-height:1.45;margin:0;padding:6px 0;border-bottom:1px solid var(--rule);}
+#cc .cx-ch-ident .ap{margin-right:8px;}
+
+/* a panel on the right */
+#cc .cx-ch-block{border:1px solid var(--rule);padding:12px 12px;}
+#cc .cx-ch-block.live{border-color:var(--rubric);}
+#cc .cx-ch-hd{display:flex;align-items:center;gap:8px;min-height:20px;}
+#cc .cx-ch-hd+*{margin-top:8px;}
+#cc .cx-ch-note{font-size:12.5px;line-height:1.45;color:var(--ink-3);margin:8px 0 0;max-width:64ch;}
+#cc .cx-ch-note.live{color:var(--rubric);}
+#cc .cx-ch-note.counter{color:var(--counter);}
+#cc .cx-ch-form{display:flex;flex-direction:column;gap:8px;}
+#cc .cx-ch-form>.cx-ch-note{margin:0;}
+#cc .cx-ch-form .inline-error,#cc .cx-ch-block>.inline-error{margin:0;}
+#cc .cx-ch-block>.inline-error{margin-top:8px;}
+#cc .cx-ch-label{display:flex;flex-direction:column;gap:4px;}
+#cc .cx-ch-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+#cc .cx-ch-grow{flex:1 1 120px;}
+#cc .cx-ch-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+#cc .cx-ch-block>.cx-ch-acts,#cc .cx-ch-block>.cx-ch-label{margin-top:8px;}
+#cc .cx-ch-area{
+  width:100%;box-sizing:border-box;resize:vertical;border:1px solid var(--rule-2);padding:6px 8px;
+  background:transparent;color:var(--ink);font:inherit;font-size:14px;line-height:1.45;
+}
+#cc .cx-ch-area.mono{font-family:Archivo,ui-monospace,monospace;font-size:12px;line-height:1.5;}
+#cc .cx-ch-area:focus-visible{outline:0;border-color:var(--rubric);}
+#cc .cx-ch-area::placeholder{color:var(--ink-3);font-style:italic;}
+
+/* old and new, side by side */
+#cc .cx-ch-sides{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 12px;}
+#cc .cx-ch-sides>div{border-top:1px solid var(--rule);padding-top:8px;}
+#cc .cx-ch-sides p{font-size:13.5px;line-height:1.45;margin:4px 0 0;overflow-wrap:anywhere;}
+#cc .cx-ch-old{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--rubric);}
+#cc .cx-ch-new{color:var(--ink);}
+#cc .cx-ch-sides>div:last-child{border-top-color:var(--counter);}
+#cc .cx-ch-none{color:var(--ink-3);font-style:italic;}

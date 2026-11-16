@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <title>CortexManage favicon, 16 px cut</title>
+  <rect width="16" height="16" fill="#14171A"/>
+  <path d="M8 6V8M3 11V8H13V11M8 8V11" fill="none" stroke="#6E9BB5" stroke-width="1"/>
+  <rect x="6" y="2" width="4" height="4" fill="#E2603F"/>
+  <rect x="2" y="11" width="3" height="3" fill="#E9EBEC"/>
+  <rect x="6" y="11" width="4" height="3" fill="#E9EBEC"/>
+  <rect x="11" y="11" width="3" height="3" fill="#E9EBEC"/>
+</svg>

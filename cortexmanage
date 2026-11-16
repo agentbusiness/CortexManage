@@ -1,0 +1,19 @@
+#!/bin/sh
+# Start CortexManage: the released app, exactly as `npx cortexmanage` starts it (the installed app in
+# ~/.cortexmanage/app/, downloaded once when there is none). The app runs the newest frame its updates
+# staged and keeps every plugin on the latest release by itself. There is no development build:
+# changes reach the app only through releases (scripts/release.sh).
+#
+# Usage: cortexmanage [app options, e.g. --headless or --safe]   (a link to this file works too)
+self="$0"
+# Follow links (e.g. ~/.local/bin/cortexmanage) to this file in the repository.
+while [ -L "$self" ]; do
+  target="$(readlink "$self")"
+  case "$target" in
+    /*) self="$target" ;;
+    *) self="$(dirname "$self")/$target" ;;
+  esac
+done
+cd "$(dirname "$self")" || exit 1
+unset CORTEX_NO_HANDOVER
+exec node npm/cortexmanage/bin/cortexmanage.mjs "$@"

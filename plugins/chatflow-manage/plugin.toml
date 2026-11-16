@@ -1,0 +1,42 @@
+# CortexManage plugin manifest (plugin.toml, schema ccplugin/1). One folder is one plugin: its backend,
+# UI packages, data and README together. Paths are relative to this folder.
+
+[plugin]
+id = "chatflow-manage"
+name = "Manage flow"
+version = "0.1.0"
+description = "The manager's chat flow: one model question per stage (assess, match, plan, validate, drift, converge, digest, why), each checked by the host, and the request's thread and composer."
+license = "UNLICENSED"
+platforms = ["macos", "linux"]
+
+# The logic plugin: a supervised process speaking CPP/1 to the frame (its own Cargo workspace).
+[backend]
+category = "chatflow-manage"
+contract = "chatflow@1"
+dir = "backend"
+build = ["cargo", "build", "--release"]
+exec = "backend/target/release/cc-chatflow-manage"
+provides = [
+  "chatflow-manage.turn", "chatflow-manage.steer", "chatflow-manage.cancel", "chatflow-manage.state", "chatflow-manage.running",
+  "chatflow-manage.assess", "chatflow-manage.match", "chatflow-manage.plan", "chatflow-manage.validate",
+  "chatflow-manage.drift", "chatflow-manage.converge", "chatflow-manage.digest", "chatflow-manage.why",
+]
+uses = [
+  "manage.request.list", "manage.request.say", "manage.discover.read", "manage.discover.search", "manage.discover.tree",
+  "mesh.claim", "mesh.release", "mesh.place.end", "model.chat", "model.count",
+  "frame.journal.append",
+]
+
+[ui]
+dir = "ui"
+build = ["npm", "run", "build"]
+
+[[ui.package]]
+dir = "ui/session"
+id = "chatflow-manage.session"
+slot = "manage.session@1"
+
+# The prompts, schemas, stage settings and texts: packed at the same path; the app reads and edits
+# them live in the live folder (<home>/live/plugins/chatflow-manage/backend/data).
+[data]
+dirs = ["backend/data"]

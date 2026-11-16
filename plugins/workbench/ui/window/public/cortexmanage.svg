@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>CortexManage — Oversee: one live node above the apps it manages</title>
+  <rect width="64" height="64" fill="#14171A"/>
+  <path d="M32 21V32M14.5 44V32H49.5V44M32 32V44" fill="none" stroke="#6E9BB5" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="27" y="11" width="10" height="10" fill="#E2603F"/>
+  <rect x="10.5" y="43" width="8" height="8" fill="#E9EBEC"/>
+  <rect x="28" y="43" width="8" height="8" fill="#E9EBEC"/>
+  <rect x="45.5" y="43" width="8" height="8" fill="#E9EBEC"/>
+</svg>

@@ -1,0 +1,30 @@
+{
+  "name": "cortexmanage",
+  "version": "0.1.4",
+  "description": "CortexManage, which manages the development of the Cortex apps: npx cortexmanage downloads the app for this machine from the official releases and starts it.",
+  "type": "module",
+  "bin": {
+    "cortexmanage": "bin/cortexmanage.mjs"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentbusiness/CortexManage.git"
+  },
+  "homepage": "https://github.com/agentbusiness/CortexManage"
+}

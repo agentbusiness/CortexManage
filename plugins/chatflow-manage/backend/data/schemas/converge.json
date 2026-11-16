@@ -1,0 +1,56 @@
+{
+  "type": "object",
+  "properties": {
+    "extra": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "enum": [
+              "@files"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "file",
+          "why"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 12
+    },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "point": {
+            "enum": [
+              "@points"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "point",
+          "why"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 12
+    }
+  },
+  "required": [
+    "extra",
+    "missing"
+  ],
+  "additionalProperties": false
+}

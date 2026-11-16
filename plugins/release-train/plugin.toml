@@ -1,0 +1,35 @@
+# CortexManage plugin manifest (plugin.toml, schema ccplugin/1). One folder is one plugin: its backend,
+# UI packages, verification and README together, separable into its own repository (only cc-protocol
+# and @cortex/sdk come from outside). `cortex-pack` builds the folder and packs it into a portable
+# .ccplugin; the frame runs it only as an installed package.
+# Paths are relative to this folder.
+
+[plugin]
+id = "release-train"
+name = "Release train"
+version = "0.1.0"
+description = "Soak and the release train: a landed package soaks in your own apps, the daily train releases what finished its soak without a report, writes the release note, and a released package can be taken back."
+license = "UNLICENSED"
+platforms = ["macos", "linux"]
+
+[backend]
+category = "train"
+contract = "train@1"
+dir = "backend"
+build = ["cargo", "build", "--release"]
+exec = "backend/target/release/cc-train"
+provides = ["train.get", "train.landed", "train.report", "train.run", "train.skip", "train.list", "train.take_back", "train.bump"]
+publishes = ["train.changed", "train.released"]
+uses = [
+  "memory.graph.put", "memory.graph.retire", "memory.graph.query",
+  "manage.repo.get", "manage.runner.release", "manage.request.create",
+]
+
+[ui]
+dir = "ui"
+build = ["npm", "run", "build"]
+
+[[ui.package]]
+dir = "ui/page"
+id = "release-train.page"
+slot = "page.releases@1"

@@ -1,0 +1,39 @@
+[package]
+name = "cc-manage"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.94"
+publish = false
+description = "CortexManage manage@1 plugin: requests, packages, the hold, the job on a runner, the watch, gates and the inbox."
+
+# Own workspace: the plugin builds (and ships) on its own.
+[workspace]
+
+[lib]
+name = "cc_manage"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cc-manage"
+path = "src/main.rs"
+
+[dependencies]
+cc-protocol = { path = "../../../protocol", features = ["charter", "host", "manage", "memory", "mesh", "runner", "service", "standard", "train"] }
+# The local time of "builds 21:13".
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net"] }
+# The runner's frame is reached as a window reaches it: one WebSocket through `mesh.link`
+# (a local address, so no TLS).
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+toml = "1.1.8"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.23", features = ["v4"] }
+
+[profile.release]
+debug = 1

@@ -1,0 +1,120 @@
+# Which files of each part are the mesh standard. Data, not code: the plugin reads this file on
+# every use (the live copy first, the packed one otherwise), so a change here takes effect at once.
+#
+# A part has an id and a list of files. A file is a path relative to the member's folder for that
+# part (each member says its own folders), with `*` (anything inside one name), `?` (one
+# character) and `**` (any number of folders). The order of the parts is the order of the rows in
+# the Standard view and of the files in standard.lock.
+#
+# Decided by reading the repositories on 2026-11-16 (CortexCode/AGENTS.md "The shared standard",
+# CortexModelServer/AGENTS.md, CortexCode/docs/STANDARD-CHANGES.md) and comparing the copies in
+# CortexModelServer, CortexCode, CortexTerm and CortexManage.
+
+# Never part of the standard, wherever a pattern would reach them: build output, dependency
+# folders and lock files. A file that is not text (a font, an image) is skipped too; the plugin
+# sees that from its bytes.
+[skip]
+folders = ["target", "node_modules", "dist", ".git"]
+files = ["Cargo.lock", "package-lock.json", ".DS_Store"]
+
+# A member's own values inside a standard file. Its names (`names` of the member) are replaced
+# wherever they stand. Its serving priority is a bare number, so it is replaced only where it
+# directly follows one of these texts (mesh `lib.rs`: `pub const SHARING_PRIORITY: u32 = 30;`).
+[own]
+priority_after = ["SHARING_PRIORITY: u32 = "]
+
+# The wire and the shared contracts (the `cc-protocol` crate).
+#
+# In: the wire files, the same bytes in all five copies (codec, conn, envelope, host, version,
+# sha256, checks, hashline), and plugin.rs (the plugin side of the lifecycle; it differs today
+# between the apps, which is a drift to close, not a reason to leave it out).
+# In: the contracts every app shares: lifecycle and records (the frame's interface), frame, mesh,
+# model, service (shared services), chatflow, skills, memory (the graph's contract: both AGENTS.md
+# files name `memory.graph.*`, `memory.stream.*` and settings as the standard) and notify (named
+# with `model@1`, `mesh@1` and `skills@1` in both lists of shared wire shapes).
+# Out: lib.rs and contracts/mod.rs (each app lists its own contracts and features there),
+# release.rs (each app's own repository and platforms), terminal.rs (shared by CortexCode and
+# CortexTerm only; CortexModelServer's list does not have it), Cargo.toml (each app's own
+# features), and every contract only one app has (serve, manage, charter, standard, train, …).
+[[part]]
+id = "protocol"
+files = [
+  "src/codec.rs",
+  "src/conn.rs",
+  "src/envelope.rs",
+  "src/host.rs",
+  "src/version.rs",
+  "src/sha256.rs",
+  "src/checks.rs",
+  "src/hashline.rs",
+  "src/plugin.rs",
+  "src/contracts/lifecycle.rs",
+  "src/contracts/records.rs",
+  "src/contracts/frame.rs",
+  "src/contracts/mesh.rs",
+  "src/contracts/model.rs",
+  "src/contracts/service.rs",
+  "src/contracts/chatflow.rs",
+  "src/contracts/skills.rs",
+  "src/contracts/memory.rs",
+  "src/contracts/notify.rs",
+]
+
+# The mesh plugin's core. Every source file except main.rs: a member without a frame runs the mesh
+# inside its own process and has no main.rs, and main.rs holds nothing of the mesh itself. lib.rs
+# carries the app's name and priority; it is compared with those replaced.
+[[part]]
+id = "mesh"
+files = [
+  "borrow.rs",
+  "card.rs",
+  "claims.rs",
+  "handover.rs",
+  "identity.rs",
+  "keychain.rs",
+  "lib.rs",
+  "live.rs",
+  "local.rs",
+  "machine.rs",
+  "members.rs",
+  "net.rs",
+  "pairing.rs",
+  "place.rs",
+  "projects.rs",
+  "service.rs",
+  "services.rs",
+  "store.rs",
+  "words.rs",
+]
+
+# The memory plugin's four files that are the graph's contract in code ("the same in every
+# repository, byte for byte"). The rest of the memory plugin is each app's own.
+[[part]]
+id = "memory"
+files = ["graphapi.rs", "streams.rs", "settings.rs", "app.rs"]
+
+# The kits: every file of the folder (sources, Cargo.toml, README, the toolchain pin).
+[[part]]
+id = "service-kit"
+files = ["**"]
+
+[[part]]
+id = "sandbox-kit"
+files = ["**"]
+
+[[part]]
+id = "model-kit"
+files = ["**"]
+
+[[part]]
+id = "shared-models"
+files = ["**"]
+
+# The theme: the tokens and the css sources, the generated css with them (it is checked in and is
+# what the window loads). Not the fonts (not text), not the build script or the package files.
+[[part]]
+id = "theme"
+files = ["tokens/**", "src/**/*.css"]
+
+# The part `charter` (the standard charter's text, docs/specs/04-STANDARD.md §5 S5) is not listed
+# yet: no repository has that file. When it exists, it is one more part here and one folder per member.

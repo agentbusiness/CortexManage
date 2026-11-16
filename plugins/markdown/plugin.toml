@@ -1,0 +1,39 @@
+# CortexManage plugin manifest (plugin.toml, schema ccplugin/1). One folder is one plugin: its backend,
+# UI packages, shell modules, verification and README together, separable into its own repository
+# (only cc-protocol and @cortex/sdk come from outside). `cortex-pack` builds the folder and packs it
+# into a portable .ccplugin; the frame runs it only as an installed package.
+# Paths are relative to this folder.
+
+[plugin]
+id = "markdown"
+name = "Markdown"
+version = "0.1.13"
+description = "Markdown documents: the right pane's rendered view of the workspace's Markdown, and the code graph's facts of a repository's prose (README, docs/, ADRs): one section per heading with its text, and the code symbols a section mentions, indexed beside the code so what a project says about itself is searchable."
+license = "UNLICENSED"
+platforms = ["macos", "linux"]
+
+# The logic plugin: a `lang@1` language pack (category `lang-markdown`, the `lang` family) served
+# by cc-lang-kit, like the lang-* plugins. It parses documents into sections and mentions; it has
+# no language server, verifiers or skills.
+[backend]
+category = "lang-markdown"
+contract = "lang@1"
+dir = "backend"
+build = ["cargo", "build", "--release"]
+exec = "backend/target/release/cc-lang-markdown"
+
+# UI packages: one npm workspace rooted at ui/ (own package-lock.json); each package builds
+# <dir>/dist with manifest.json {id, version, slot, entry, css}, which the frame serves.
+[ui]
+dir = "ui"
+build = ["npm", "run", "build"]
+
+[[ui.package]]
+dir = "ui/pane"
+id = "markdown.pane"
+slot = "pane.markdown@1"
+
+# The plugin's data (skills): packed at the same path; the app reads and edits it live in
+# the live folder (<home>/live/plugins/markdown/data).
+[data]
+dirs = ["data"]

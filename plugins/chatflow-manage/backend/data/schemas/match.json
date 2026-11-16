@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "because": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "relation": {
+      "enum": [
+        "same",
+        "together",
+        "contradict",
+        "unrelated"
+      ]
+    }
+  },
+  "required": [
+    "because",
+    "relation"
+  ],
+  "additionalProperties": false
+}

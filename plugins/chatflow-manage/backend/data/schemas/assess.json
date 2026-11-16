@@ -1,0 +1,99 @@
+{
+  "type": "object",
+  "properties": {
+    "because": {
+      "type": "string",
+      "maxLength": 400
+    },
+    "kind": {
+      "enum": [
+        "fix",
+        "feature",
+        "design",
+        "flow",
+        "refactor",
+        "performance",
+        "architecture",
+        "standard",
+        "security",
+        "release",
+        "docs",
+        "charter"
+      ]
+    },
+    "surface": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "frontend",
+          "backend",
+          "flow"
+        ]
+      },
+      "maxItems": 3
+    },
+    "tier": {
+      "enum": [
+        "safe",
+        "minor",
+        "major"
+      ]
+    },
+    "urgent_because": {
+      "type": "string",
+      "maxLength": 400
+    },
+    "urgent": {
+      "type": "boolean"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "maxItems": 4
+          },
+          "multi": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "options",
+          "multi"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 3
+    },
+    "actionable": {
+      "type": "boolean"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 80
+    }
+  },
+  "required": [
+    "because",
+    "kind",
+    "surface",
+    "tier",
+    "urgent_because",
+    "urgent",
+    "questions",
+    "actionable",
+    "title"
+  ],
+  "additionalProperties": false
+}

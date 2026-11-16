@@ -1,0 +1,161 @@
+{
+  "type": "object",
+  "properties": {
+    "analysis": {
+      "type": "string",
+      "maxLength": 1500
+    },
+    "goal": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "approach": {
+      "type": "string",
+      "maxLength": 3000
+    },
+    "architecture": {
+      "type": "string",
+      "maxLength": 3000
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 600
+      },
+      "maxItems": 8
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 3000
+          },
+          "known": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "maxItems": 8
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 4
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "@tasks"
+              ]
+            },
+            "maxItems": 12
+          },
+          "touches": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "maxItems": 16
+          },
+          "limit_files": {
+            "type": "integer"
+          },
+          "limit_lines": {
+            "type": "integer"
+          },
+          "walks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "do": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "see": {
+                  "type": "string",
+                  "maxLength": 400
+                },
+                "method": {
+                  "enum": [
+                    "computer",
+                    "command",
+                    "journal",
+                    "mesh"
+                  ]
+                },
+                "evidence_kind": {
+                  "enum": [
+                    "shot",
+                    "recording",
+                    "log",
+                    "trace"
+                  ]
+                },
+                "command": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "expect": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "do",
+                "see",
+                "method",
+                "evidence_kind",
+                "command",
+                "expect"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 2
+          }
+        },
+        "required": [
+          "title",
+          "brief",
+          "known",
+          "rules",
+          "depends_on",
+          "touches",
+          "limit_files",
+          "limit_lines",
+          "walks"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 12
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 600
+    }
+  },
+  "required": [
+    "analysis",
+    "goal",
+    "approach",
+    "architecture",
+    "risks",
+    "tasks",
+    "note"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,82 @@
+# Every short text of the manage flow. `{name}` is filled in by the host; each text keeps exactly
+# the placeholders it is shipped with (checked when the set is read).
+
+# ---- what a person reads ---------------------------------------------------------------------
+not_in_flow = "`{verb}` is not part of this flow. A request's session takes messages (turn, steer, cancel) and the manager's own questions."
+empty_message = "Write something to send."
+no_request = "No request belongs to this session, so the message could not be passed on."
+no_line = "Noted."
+cancelled = "Stopped."
+
+# ---- the blocks of a question, in the order they are placed ----------------------------------
+block_app = "The app: {name}."
+block_identity = "What the app is, and what it must never become:\n{text}"
+block_rules = "The app's laws and constraints:\n{items}"
+block_laws = "The app's laws:\n{items}"
+block_request = "The request:\n<<<\n{text}\n>>>"
+block_kind = "The request was read as: {kind}, {tier}."
+block_earlier = "What the person said about the earlier plan:\n{text}"
+list_item = "- {text}"
+
+# ---- the last line of each question: the step to take next ----------------------------------
+# Greedy decoding answers the same question the same way, so the second ask says what was wrong.
+again = "Your last answer could not be used: {problem}"
+assess_step = "Fill the fields now, starting with `because`: one sentence copied from the request above, word for word."
+match_pair = "Request A: {a_title}\n{a_text}\n\nRequest B: {b_title}\n{b_text}"
+match_step = "Fill `because` in one sentence, then `relation`."
+validate_standard = "Host fact: this point touches a file of the shared standard, and the request is not a change to the standard."
+validate_standard_clear = "Host fact: this point touches no file of the shared standard."
+validate_point = "The point to check:\nTitle: {title}\nWhat it does: {brief}\nIts rules:\n{rules}\nFiles it may touch: {touches}\nIts walks:\n{walks}"
+validate_walk = "- Do: {do} See: {see} (by {method})"
+validate_walk_command = "- Run `{command}` and find \"{expect}\" in its output. Do: {do} See: {see}"
+validate_none = "(none)"
+validate_step = "Answer the five questions about the point above, then write `reason`, then `verdict`."
+drift_task = "The task: {title}\nIts rules:\n{rules}"
+drift_diff = "The diff made for it (the number before a line is its line number in the changed file):\n{diff}"
+drift_step = "Name the `file` and the `line` that do what the task says, then `reason`, then `does_it`."
+drift_no_diff = "The diff is empty: no file was changed."
+drift_no_line = "The answer named no line of the diff that does the task."
+drift_unreadable = "The model gave no usable answer, so this counts as no."
+diff_cut = "(the diff goes on: {lines} more lines are not shown)"
+converge_points = "The plan's points:\n{points}"
+converge_point = "{n}. {title}{rules}"
+converge_rule = "\n   - {text}"
+converge_diff = "The whole change:\n{diff}"
+converge_step = "List `extra`: changed files no point asks for. Then list `missing`: points the change does not do."
+converge_failed = "The model gave no usable answer, so the plan and the change were not compared: {problem}"
+digest_facts = "The facts:\n{facts}"
+digest_step = "Write the two lines now."
+why_facts = "The decision that waits, as facts:\n{facts}"
+why_step = "Fill `why`, then `if_yes`, then `if_no`, one sentence each, from the facts above."
+why_failed = "The model gave no usable words for this decision: {problem}"
+match_unreadable = "The model gave no usable answer, so the two count as unrelated."
+validate_unreadable = "The model gave no usable answer, so a person decides."
+validate_no_reason = "The model gave a verdict without a reason, so a person decides."
+validate_contradiction = "The model said keep although one of its five answers was no, so a person decides."
+
+# ---- PLAN ------------------------------------------------------------------------------------
+ceremony_safe = "This change is safe: nothing a person sees or uses changes. The whole plan gets one walk, on its last task: it shows that what a person sees is the same as before. Leave `architecture` empty."
+ceremony_minor = "This change is minor: a person sees a change in one place. Every task gets one or two walks. Leave `architecture` empty."
+ceremony_major = "This change is major: an interface, stored data or several places change. Every task gets one or two walks, and `architecture` is a design note: the parts and interfaces that change, by their names, and why this cut."
+discover_start = "The repository's top folder:\n{tree}"
+discover_step = "Look at the code this request concerns. Start with a `search` for a word of the request, or a `tree` of the folder whose name fits."
+plan_found = "What reading the repository found:"
+plan_found_item = "### {call}\n{output}"
+# A read too long to carry whole into the plan's question (which has no tools to ask for the rest).
+found_cut = "\n[… {lines} lines in the middle are not shown …]\n"
+plan_blind = "The repository could not be read, so nothing is known about its files. Name files only when the request names them."
+plan_step = "Write the plan now, starting with `analysis`."
+plan_failed = "The model gave no usable plan: {problem}"
+# Put before the plan's own note when the plan was written without reading the repository.
+note_blind = "Planned from the request and the rules alone: the repository could not be read ({error})."
+
+# ---- tool results (PLAN's discovery) ---------------------------------------------------------
+tool_cut = "\n[… {lines} lines in the middle are not shown; `read` the file with `from` and `lines` for that part …]\n"
+tool_failed = "{error}\nTry another path, or `tree` the folder to see what is there."
+tool_unknown = "There is no tool `{name}`. Use `read`, `search` or `tree`."
+tool_bad_args = "The arguments were not a JSON object. Call `{name}` again with its fields."
+tool_no_hits = "Nothing found for \"{text}\". Search for a shorter word, or `tree` a folder."
+tool_empty = "(empty)"
+tool_read = "Read a file of the repository by its path. Use `search` first when you do not know the path."
+tool_search = "Find a fixed text in the repository's files. Use `tree` when you look for a place, not a word."
+tool_tree = "List a folder of the repository. Use `search` when you look for a word, not a place."

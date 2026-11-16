@@ -1,0 +1,11 @@
+/* pane.evidence@1 — a kept point, and under it each walk: its result's square, what to do and
+   what is seen when it works, what was seen, how and when. */
+#cc .cm-point{padding:12px 0;border-bottom:1px solid var(--rule);}
+#cc .cm-point-h{display:grid;grid-template-columns:18px minmax(0,1fr);gap:0 6px;align-items:baseline;font-family:var(--font-reading);font-size:14px;line-height:1.35;color:var(--ink);}
+#cc .cm-point-h .kk{font-family:var(--font-apparatus);font-size:9.5px;font-weight:600;color:var(--ink-3);font-variant-numeric:tabular-nums;}
+#cc .cm-walk{display:grid;grid-template-columns:18px minmax(0,1fr);gap:2px 6px;padding:8px 0 0;}
+#cc .cm-walk>.cx-pip{margin-top:6px;justify-self:start;}
+#cc .cm-walk p{grid-column:2;margin:0;font-family:var(--font-reading);font-size:12.5px;line-height:1.45;color:var(--ink-3);overflow-wrap:anywhere;}
+#cc .cm-walk p.do{color:var(--ink-2);font-size:13px;}
+#cc .cm-walk p .ap{margin-right:6px;}
+#cc .cm-walk .how{grid-column:2;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin-top:2px;}

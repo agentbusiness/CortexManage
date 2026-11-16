@@ -1,0 +1,35 @@
+{
+  "name": "@cortex-ui/charter-page",
+  "version": "0.1.0",
+  "description": "The Charter view: an app's laws, constraints and conventions, how each is kept, and the panel that proposes a change.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "cortex": {
+    "id": "charter.page",
+    "slot": "page.charter@1",
+    "label": "Charter",
+    "order": 10
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@cortex/sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "@cortex/sdk": "file:../../../../ui/sdk",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.5"
+  }
+}

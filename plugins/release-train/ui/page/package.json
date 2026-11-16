@@ -1,0 +1,35 @@
+{
+  "name": "@cortex-ui/release-train-page",
+  "version": "0.1.0",
+  "description": "Releases: tonight's train, what soaks in your apps, what was released, and Take back.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "cortex": {
+    "id": "release-train.page",
+    "slot": "page.releases@1",
+    "label": "Releases",
+    "order": 20
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@cortex/sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "@cortex/sdk": "file:../../../../ui/sdk",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.5"
+  }
+}

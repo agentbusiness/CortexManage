@@ -1,0 +1,45 @@
+/*
+ * The Releases page. The theme gives the type (.ap, .num), the controls (.detent), the pips and
+ * the ruled table (.tbl); what is here is the page's own layout, in the theme's tokens: hairlines,
+ * no radius, no shadow.
+ */
+.rt-page{display:flex;flex-direction:column;gap:14px;padding:18px 22px 20px 18px;min-height:0;overflow:auto;}
+.rt-block{border:1px solid var(--rule);padding:12px 14px;}
+.rt-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.rt-hd .grow{flex:1;}
+.rt-page .pip.done{background:var(--ink-3);}
+
+.rt-page .tbl{max-width:none;margin:0;}
+.rt-page .tbl td{font-size:14px;line-height:1.45;vertical-align:top;}
+.rt-page .tbl td.k{
+  font-family:Archivo,sans-serif;font-size:10px;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink);white-space:nowrap;
+}
+.rt-carry{display:block;}
+.rt-carry + .rt-carry{margin-top:4px;}
+
+.rt-tag{
+  display:inline-flex;align-items:center;height:18px;padding:0 7px;margin-left:6px;
+  border:1px solid var(--rule-2);vertical-align:middle;white-space:nowrap;
+  font-family:Archivo,sans-serif;font-size:8.5px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);
+}
+.rt-tag.minor{color:var(--counter);border-color:var(--counter);}
+.rt-tag.major,.rt-tag.urgent{color:var(--rubric);border-color:var(--rubric);}
+
+.rt-acts{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;}
+.rt-row{
+  display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  padding:6px 0;border-top:1px solid var(--rule);font-size:14px;line-height:1.45;color:var(--ink-2);
+}
+.rt-row:first-of-type{border-top:0;}
+.rt-row .what{min-width:0;color:var(--ink);}
+.rt-row .side{display:flex;align-items:center;gap:8px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;}
+.rt-row .ap{line-height:1.6;}
+.rt-sub{font-size:13px;font-style:italic;color:var(--ink-3);margin:2px 0 0;}
+.rt-none{font-size:14px;font-style:italic;color:var(--ink-3);margin:0;}
+.rt-tail{
+  margin:6px 0 0;padding:6px 0 0 10px;border-left:1px solid var(--rule-2);
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;color:var(--ink-3);
+  white-space:pre-wrap;overflow-wrap:anywhere;
+}

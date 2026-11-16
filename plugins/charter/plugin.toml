@@ -1,0 +1,35 @@
+# CortexManage plugin manifest (plugin.toml, schema ccplugin/1). One folder is one plugin: its backend,
+# UI packages and README together, separable into its own repository (only cc-protocol and
+# @cortex/sdk come from outside). `cortex-pack` builds the folder and packs it into a portable
+# .ccplugin; the frame runs it only as an installed package.
+# Paths are relative to this folder.
+
+[plugin]
+id = "charter"
+name = "Charter"
+version = "0.1.0"
+description = "Every app's design specification: laws, constraints and conventions kept in the graph, proposals bound to their exact wording, the printed AGENTS.md, and the checks kept by code."
+license = "UNLICENSED"
+platforms = ["macos", "linux"]
+
+[backend]
+category = "charter"
+contract = "charter@1"
+dir = "backend"
+build = ["cargo", "build", "--release"]
+exec = "backend/target/release/cc-charter"
+provides = [
+  "charter.get", "charter.list", "charter.import", "charter.accept", "charter.rule.edit", "charter.rule.delete",
+  "charter.propose", "charter.amend", "charter.print", "charter.check", "charter.rules_for", "charter.drift",
+]
+publishes = ["charter.changed"]
+uses = ["memory.graph.put", "memory.graph.retire", "memory.graph.query", "memory.graph.machine"]
+
+[ui]
+dir = "ui"
+build = ["npm", "run", "build"]
+
+[[ui.package]]
+dir = "ui/page"
+id = "charter.page"
+slot = "page.charter@1"

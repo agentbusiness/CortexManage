@@ -1,0 +1,81 @@
+/* manage.session@1: the session view of the brief's mockup. The theme gives the head (.colhead),
+   the labels (.ap), the controls (.detent, .sw, .seg-set), the pip, the notice and the composer's
+   field (.write, .write-row); what is here is the thread's own blocks, by the mockup's names, kept
+   inside .cm-session. No radius, no shadow, no gradient; hairlines only. */
+
+.cm-session{display:flex;flex-direction:column;min-height:0;height:100%;min-width:0;}
+.cm-session .colhead .title{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.cm-session .sub{font-style:italic;color:var(--ink-3);}
+.cm-session code{font-family:var(--font-mono,ui-monospace,Menlo,monospace);font-size:.88em;color:var(--ink-2);}
+.cm-session q{quotes:"“" "”";}
+
+/* tags: the tier takes the colour, the rest stay quiet */
+.cm-session .tag{
+  display:inline-flex;align-items:center;gap:6px;height:18px;padding:0 7px;border:1px solid var(--rule-2);
+  font-family:var(--font-apparatus,Archivo,"Helvetica Neue",Arial,sans-serif);font-size:8.5px;font-weight:600;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;vertical-align:middle;
+}
+.cm-session .tag.safe{color:var(--ink-3);}
+.cm-session .tag.minor{color:var(--counter);border-color:var(--counter);}
+.cm-session .tag.major{color:var(--rubric);border-color:var(--rubric);}
+
+/* state pips beyond the theme's two */
+.cm-session .pip.done{background:var(--ink-3);}
+.cm-session .pip.run{background:var(--counter);animation:cm-pulse 1.6s ease-in-out infinite;}
+.cm-session .pip.fail{background:transparent;box-shadow:inset 0 0 0 1px var(--rubric-deep);}
+@keyframes cm-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.cm-session .pip.run{animation:none}}
+
+/* the thread */
+.cm-session .thread{flex:1;min-height:0;overflow:auto;padding:18px 22px 20px 18px;display:flex;flex-direction:column;gap:18px;}
+.cm-session .thread>*{flex:0 0 auto;}
+.cm-session .msg .who{margin-bottom:6px;}
+.cm-session .msg p{font-size:14.5px;line-height:1.5;margin:0 0 8px;max-width:68ch;color:var(--ink);}
+.cm-session .aside{margin:0;font-size:13.5px;}
+
+.cm-session .block{border:1px solid var(--rule);padding:12px 14px;}
+.cm-session .block.counter{border-color:var(--counter);}
+.cm-session .block .hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.cm-session .block .hd:last-child{margin-bottom:0;}
+.cm-session .grow{flex:1;}
+.cm-session .block p{margin:0;max-width:68ch;}
+.cm-session .block .body{font-size:13.5px;line-height:1.5;color:var(--ink-2);}
+.cm-session .block .body+.body{margin-top:6px;}
+.cm-session .block .lead{font-size:14px;line-height:1.5;color:var(--ink);margin-bottom:10px;}
+.cm-session .block .foot{font-size:13px;padding-top:9px;border-top:1px solid var(--rule);}
+.cm-session .block .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+
+.cm-session .kv{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:13.5px;line-height:1.5;align-items:baseline;color:var(--ink);}
+.cm-session .kv .ap{line-height:1.5;}
+
+.cm-session .task{display:grid;grid-template-columns:22px 1fr auto;gap:2px 8px;padding:9px 0;border-top:1px solid var(--rule);}
+.cm-session .task .kk{font-family:var(--font-apparatus,Archivo,"Helvetica Neue",Arial,sans-serif);font-size:9.5px;font-weight:600;color:var(--ink-3);padding-top:2px;}
+.cm-session .task .tt{font-size:14px;color:var(--ink);}
+.cm-session .task .ac{grid-column:2/4;font-size:12.5px;color:var(--ink-3);line-height:1.4;}
+.cm-session .task .ac b{
+  font-family:var(--font-apparatus,Archivo,"Helvetica Neue",Arial,sans-serif);font-weight:600;font-size:8.5px;
+  letter-spacing:.14em;color:var(--counter);text-transform:uppercase;margin-right:5px;
+}
+.cm-session .task.cut .tt{text-decoration:line-through;text-decoration-color:var(--rubric);color:var(--ink-3);}
+.cm-session .v{
+  font-family:var(--font-apparatus,Archivo,"Helvetica Neue",Arial,sans-serif);font-size:8.5px;font-weight:600;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap;
+}
+.cm-session .v.keep{color:var(--counter);}
+.cm-session .v.cut,.cm-session .v.ask{color:var(--rubric);}
+
+/* the clarify form */
+.cm-session .question{padding:9px 0;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
+.cm-session .question p{font-size:14px;color:var(--ink);}
+.cm-session .question .opts{display:flex;gap:7px;flex-wrap:wrap;}
+.cm-session .question .write.one{width:100%;max-width:56ch;}
+
+/* one-line entries: a stage reached, a decision answered */
+.cm-session .line{display:flex;align-items:baseline;gap:8px;min-width:0;}
+.cm-session .line .pip{align-self:center;}
+.cm-session .line .said{font-size:13.5px;color:var(--ink-2);min-width:0;}
+
+/* the composer sits flush at the foot of the column */
+.cm-session .cm-composer{margin-top:0;border-top:1px solid var(--rule);padding:10px 18px 14px;}
+.cm-session .cm-composer .composer-h{min-height:17px;}
+.cm-session .cm-composer .composer-h:empty{display:none;}

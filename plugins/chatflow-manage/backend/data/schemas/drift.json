@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "file": {
+      "enum": [
+        "@files"
+      ]
+    },
+    "line": {
+      "type": "integer"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "does_it": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "file",
+    "line",
+    "reason",
+    "does_it"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,45 @@
+# CortexManage plugin manifest (plugin.toml, schema ccplugin/1). One folder is one plugin: its backend,
+# data, UI packages and README together, separable into its own repository (only cc-protocol and
+# @cortex/sdk come from outside). `cortex-pack` builds the folder and packs it into a portable
+# .ccplugin; the frame runs it only as an installed package.
+# Paths are relative to this folder.
+
+[plugin]
+id = "standard"
+name = "Mesh standard"
+version = "0.1.0"
+description = "One mesh standard for every Cortex app: the members, the lock (standard.lock), the check of every member's copy against it, the handshake, and the Standard view."
+license = "UNLICENSED"
+platforms = ["macos", "linux"]
+
+[backend]
+category = "standard"
+contract = "standard@1"
+dir = "backend"
+build = ["cargo", "build", "--release"]
+exec = "backend/target/release/cc-standard"
+provides = [
+  "standard.lock.get", "standard.lock.write", "standard.lock.print",
+  "standard.member.list", "standard.member.edit",
+  "standard.check", "standard.get", "standard.touches", "standard.paths", "standard.handshake",
+]
+publishes = ["standard.changed"]
+uses = [
+  "memory.graph.put", "memory.graph.retire", "memory.graph.query", "memory.graph.machine",
+  "mesh.peers", "mesh.call",
+]
+
+[ui]
+dir = "ui"
+build = ["npm", "run", "build"]
+
+# The Standard view in the centre: one row per part, one column per member.
+[[ui.package]]
+dir = "ui/page"
+id = "standard.page"
+slot = "page.standard@1"
+
+# Which files of each part are the standard (parts.toml): packed at the same path; the app reads
+# and edits it live in the live folder (<home>/live/plugins/standard/backend/data).
+[data]
+dirs = ["backend/data"]

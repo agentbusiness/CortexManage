@@ -1,0 +1,28 @@
+[package]
+name = "cc-standard"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.94"
+publish = false
+description = "CortexManage standard@1 plugin: the members of the mesh standard, the lock, the check of every member's copy against it, and the handshake."
+
+# Own workspace: the plugin builds (and ships) on its own.
+[workspace]
+
+[lib]
+name = "cc_standard"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cc-standard"
+path = "src/main.rs"
+
+[dependencies]
+cc-protocol = { path = "../../../protocol", features = ["memory", "mesh", "standard"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time"] }
+toml = "1.1.8"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
