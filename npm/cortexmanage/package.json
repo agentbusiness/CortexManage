@@ -14,8 +14,7 @@
     "node": ">=18.17"
   },
   "os": [
-    "darwin",
-    "linux"
+    "darwin"
   ],
   "cpu": [
     "arm64",
