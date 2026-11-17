@@ -7,7 +7,7 @@
 [plugin]
 id = "charter"
 name = "Charter"
-version = "0.1.0"
+version = "0.1.1"
 description = "Every app's design specification: laws, constraints and conventions kept in the graph, proposals bound to their exact wording, the printed AGENTS.md, and the checks kept by code."
 license = "UNLICENSED"
 platforms = ["macos", "linux"]
