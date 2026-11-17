@@ -3,11 +3,12 @@
  * repositories, and under each its open requests: a package of several requests is a bracket
  * around them. Below, under its own heading, the shared standard, only when the person's
  * repositories carry one.
- * Pressing a repository's name opens its page; pressing a request opens its session.
+ * Pressing a repository's name opens its page; pressing a request opens its session. At the foot,
+ * the model's own line (`card.model@1`): which model, loading or downloading, busy.
  */
 
 import { useState } from 'react';
-import { Cross, Menu, definePlugin, useClient, useNow, useQuery, type Client } from '@cortex/sdk';
+import { Cross, Menu, definePlugin, useClient, useHost, useNow, useQuery, type Client } from '@cortex/sdk';
 import {
   CHANGED,
   STAGE_LABEL,
@@ -295,6 +296,7 @@ function AddRepo({ done }: { done: (next: Selection | null) => void }) {
 }
 
 function Sidebar() {
+  const host = useHost();
   const repos = useRepos();
   const [selection, setSelection] = useManageSelection();
   const [form, setForm] = useState<'request' | 'repo' | null>(null);
@@ -321,6 +323,7 @@ function Sidebar() {
         {list.map((repo, index) => <RepoBlock key={repo.id} repo={repo} index={index} selection={selection} open={setSelection} now={now} />)}
         <SharedStandard selection={selection} open={setSelection} />
       </div>
+      <div className="cm-side-foot"><host.Slot name="card.model@1" /></div>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { PluginInfo } from '@cortex/sdk';
 
 /** The categories the product is built from (`protocol/src/contracts/mod.rs`, `CATEGORIES`, and
  * CortexManage's own flow of the `chatflow` family). */
-export const EXPECTED_CATEGORIES = ['memory', 'mesh', 'manage', 'chatflow-manage', 'charter', 'standard', 'train'] as const;
+export const EXPECTED_CATEGORIES = ['model', 'memory', 'mesh', 'manage', 'chatflow-manage', 'charter', 'standard', 'train'] as const;
 
 export interface ServiceRow {
   category: string;
