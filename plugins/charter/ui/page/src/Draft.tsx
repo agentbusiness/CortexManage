@@ -44,7 +44,6 @@ function DraftRule({ repo, rule }: { repo: string; rule: Rule }) {
       <span className="cx-ch-tx">{rule.text}</span>
       <Seg label={`Level of ${rule.id}`} value={rule.level} options={LEVEL_OPTIONS} disabled={act.busy} onChange={(level) => void setLevel(level)} />
       <div className="cx-ch-under">
-        {rule.source && <span className="ap faint">{rule.source}</span>}
         <Kept rule={rule} />
         <span className="grow" />
         <button type="button" className="detent tiny" aria-expanded={open} onClick={() => setOpen((was) => !was)}>{open ? 'Close' : 'Edit'}</button>
@@ -143,7 +142,6 @@ export function DraftView({ charter, printed }: { charter: Charter; printed: Pri
   const client = useClient();
   const act = useAct();
   const [again, setAgain] = useState(false);
-  const count = (level: Level) => charter.rules.filter((rule) => rule.level === level).length;
   const accept = () => act.run(() => client.call('charter.accept', { repo: charter.repo }));
   const over = printed !== undefined && printed.head_chars > HEAD_LIMIT;
 
@@ -168,20 +166,11 @@ export function DraftView({ charter, printed }: { charter: Charter; printed: Pri
       <div className="cx-ch-right">
         <div className="cx-ch-block">
           <div className="cx-ch-hd"><span className="pip hollow" /><span className="ap">Draft</span><span className="ap faint">not in force yet</span></div>
-          <p className="cx-ch-note">
-            {count('law')} laws, {count('constraint')} constraints, {count('convention')} conventions. Set each rule&rsquo;s level on the left. A rule that changes level gets a new id of that level.
-          </p>
-          {printed && (
-            <p className={over ? 'cx-ch-note live' : 'cx-ch-note'}>
-              In the printed AGENTS.md the laws and constraints end at character {printed.head_chars} of the {HEAD_LIMIT} that CortexCode&rsquo;s model reads.
-              {over && ' They do not fit: shorten them, or move some to conventions.'}
-            </p>
-          )}
+          {printed && over && <p className="cx-ch-note live">The laws and constraints are too long for the builder to read in full: shorten them, or move some to conventions.</p>}
           {act.error && <p className="inline-error">{act.error}</p>}
           <div className="cx-ch-acts">
             <button type="button" className="detent send" disabled={act.busy || charter.rules.length === 0} onClick={() => void accept()}>Accept draft</button>
           </div>
-          <p className="cx-ch-note">Accepting makes this version 1.0. After that a law changes only by your hand, and the other rules through proposals.</p>
         </div>
         <div className="cx-ch-block">
           <div className="cx-ch-hd"><span className="ap">New rule</span></div>

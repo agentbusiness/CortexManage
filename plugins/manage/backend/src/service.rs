@@ -858,7 +858,12 @@ impl Manager {
         };
 
         let started = std::time::Instant::now();
-        let policy = Policy::default();
+        let globs = |paths: &[&str]| paths.iter().map(|glob| (*glob).to_owned()).collect::<Vec<_>>();
+        let policy = Policy {
+            major_paths: globs(&["protocol/**", "frame/**", "**/pairing*", "AGENTS.md"]),
+            minor_paths: globs(&["plugins/*/ui/**", "plugins/*/backend/data/**", "**/texts.toml"]),
+            ..Policy::default()
+        };
         let point = |touches: &[&str], lines: u32| Point { n: 1, title: "probe".into(), touches: touches.iter().map(|touch| (*touch).to_owned()).collect(), limit_lines: lines, ..Point::default() };
         let cases: [(&str, Vec<Point>, Vec<String>, Tier); 7] = [
             ("a plugin's backend source is safe", vec![point(&["plugins/mesh/backend/src/net.rs"], 40)], vec![], Tier::Safe),

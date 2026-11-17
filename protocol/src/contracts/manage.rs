@@ -190,11 +190,10 @@ impl Default for Policy {
             budget_safe: [30, 200_000, 150],
             budget_minor: [90, 600_000, 600],
             budget_major: [240, 2_000_000, 2500],
-            major_paths: ["protocol/**", "frame/**", "sandbox-kit/**", "service-kit/**", "model-kit/**", "shared-models/**", "**/pairing*", "**/members*", "standard.lock", "AGENTS.md"]
-                .iter()
-                .map(|glob| (*glob).to_owned())
-                .collect(),
-            minor_paths: ["plugins/*/ui/**", "plugins/*/backend/data/**", "plugins/*/data/**", "**/texts.toml"].iter().map(|glob| (*glob).to_owned()).collect(),
+            // Nothing about any one repository's layout is built in: a repository's own paths are
+            // set in its settings.
+            major_paths: vec!["AGENTS.md".to_owned()],
+            minor_paths: Vec::new(),
             train_at: "03:00".into(),
         }
     }

@@ -53,7 +53,8 @@ export function Kept({ rule }: { rule: Rule }) {
   if (rule.kept_by === 'check') return <span className="cx-ch-v" title={rule.check ? `The check ${rule.check}` : undefined}>Check{rule.check ? ` · ${rule.check}` : ''}</span>;
   if (rule.kept_by === 'validator') return <span className="cx-ch-v" title="A question on every plan">Validator</span>;
   const marked = rule.level !== 'convention';
-  return <span className={marked ? 'cx-ch-v cut' : 'cx-ch-v'} title={marked ? 'Only the model reading it keeps this rule' : undefined}>Text only</span>;
+  // A rule kept by its text alone says nothing more: only a law nobody checks is marked.
+  return marked ? <span className="cx-ch-v cut" title="Only the model reading it keeps this rule">Not checked</span> : null;
 }
 
 /** One line per entry, empty lines dropped. */

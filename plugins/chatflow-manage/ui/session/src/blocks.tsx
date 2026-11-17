@@ -164,9 +164,9 @@ export function Clarify({ entry, open, acts }: { entry: JournalEntry; open: bool
   );
 }
 
-function Task({ point }: { point: Point }) {
+function Task({ point, checks }: { point: Point; checks: boolean }) {
   const verdict = point.verdict ?? '';
-  const walks = point.walks ?? [];
+  const walks = checks ? point.walks ?? [] : [];
   return (
     <div className={`task${verdict === 'cut' ? ' cut' : ''}`}>
       <span className="kk">{point.n}</span>
@@ -178,24 +178,32 @@ function Task({ point }: { point: Point }) {
           {walk.method === 'command' && walk.command && <> <code>{walk.command}</code></>}
         </span>
       ))}
-      {verdict !== '' && verdict !== 'keep' && point.verdict_reason && <span className="ac">Validator: {point.verdict_reason}</span>}
+      {verdict === 'cut' && point.verdict_reason && <span className="ac">Left out: {point.verdict_reason}</span>}
     </div>
   );
 }
 
 /** `manage_plan`: the tasks with their walks and the validator's mark; cut ones struck through. */
 export function PlanBlock({ entry }: { entry: JournalEntry }) {
+  const [checks, setChecks] = useState(false);
   const plan = record(entry.data.plan) as unknown as Plan | null;
   if (!plan || !Array.isArray(plan.points)) return null;
   const cut = plan.points.filter((point) => point.verdict === 'cut').length;
   const waiting = plan.points.filter((point) => point.verdict === 'ask').length;
   const aside = [count(plan.points.length, 'point', 'points'), cut > 0 ? `validator cut ${cut}` : '', waiting > 0 ? `${waiting} for you to decide` : ''].filter(Boolean).join(' · ');
+  const walks = plan.points.reduce((sum, point) => sum + (point.walks ?? []).length, 0);
   return (
     <Block seq={entry.seq} pip="done" label={`Plan v${plan.version}`} aside={aside} time={entry.ts_ms}>
       {plan.goal && <p className="lead">{plan.goal}</p>}
-      {plan.architecture && <p className="lead sub">{plan.architecture}</p>}
-      {plan.points.map((point) => <Task key={point.n} point={point} />)}
-      {plan.note && <p className="foot sub">{plan.note}</p>}
+      {plan.points.map((point) => <Task key={point.n} point={point} checks={checks} />)}
+      {/* How each point will be proven is one press away, not in the way. */}
+      {walks > 0 && (
+        <p className="foot">
+          <button type="button" className="detent tiny" aria-expanded={checks} onClick={() => setChecks(!checks)}>{checks ? 'Hide the checks' : `How it is checked (${walks})`}</button>
+        </p>
+      )}
+      {checks && plan.architecture && <p className="foot sub">{plan.architecture}</p>}
+      {checks && plan.note && <p className="foot sub">{plan.note}</p>}
     </Block>
   );
 }
@@ -209,9 +217,9 @@ export function PackageBlock({ entry, open, acts }: { entry: JournalEntry; open:
   const label = joined.length > 0 ? 'Joined a package' : data.urgent === true ? 'Urgent' : until ? 'Held' : 'Package';
   return (
     <Block seq={entry.seq} pip="hollow" label={label} labelTone="origin" time={entry.ts_ms} tone="counter">
-      {str(data.text) && <p className="body">{str(data.text)}</p>}
-      {joined.length > 0 && <p className="body sub">With {joined.join(', ')}.</p>}
-      {open && until !== null && until > 0 && <p className="body sub">The hold ends at {clock(until)}.</p>}
+      {open && until !== null && until > 0
+        ? <p className="body">Builds at {clock(until)}{joined.length > 0 ? `, together with ${joined.join(', ')}` : ''}.</p>
+        : str(data.text) && <p className="body">{str(data.text)}</p>}
       {open && pkg && (
         <div className="acts">
           <button type="button" className="detent" disabled={acts.busy} onClick={() => acts.packageEdit(pkg, { start_now: true })}>Start now</button>

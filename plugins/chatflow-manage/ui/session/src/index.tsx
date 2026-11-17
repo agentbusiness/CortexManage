@@ -10,7 +10,7 @@
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { definePlugin, errorMessage, kinds, useClient, useJournal, useQuery, useShared, type JournalEntry, type JournalPatch } from '@cortex/sdk';
-import { Assessment, AskBlock, Clarify, GateBlock, Message, Note, PackageBlock, PlanBlock, StageLine, Trouble, WatchBlock, type Acts } from './blocks';
+import { AskBlock, Clarify, GateBlock, Message, Note, PackageBlock, PlanBlock, StageLine, Trouble, WatchBlock, type Acts } from './blocks';
 import { BEFORE_BUILDING, NO_SELECTION, wordLabel, type Ask, type RequestView, type Selection } from './types';
 import './session.css';
 
@@ -124,9 +124,12 @@ function Session() {
   const block = (entry: JournalEntry) => {
     switch (entry.kind) {
       case kinds.USER_MESSAGE: return <Message key={entry.seq} entry={entry} who="You" />;
-      case kinds.ASSISTANT_MESSAGE: return <Message key={entry.seq} entry={entry} who="Manager" tone="live" />;
+      // The manager's answers to the person. Its status lines (assessed, planned, validated, held)
+      // repeat what the head's tags and the blocks already show, so they are not drawn.
+      case kinds.ASSISTANT_MESSAGE: return typeof entry.data.run_id === 'string' ? <Message key={entry.seq} entry={entry} who="Manager" tone="live" /> : null;
       case 'digest': return <Message key={entry.seq} entry={entry} who="Manager · digest" tone="live" />;
-      case 'assessment': return <Assessment key={entry.seq} entry={entry} />;
+      // The assessment is the tags in the head (tier, kind, what it reaches).
+      case 'assessment': return null;
       case 'clarify': return <Clarify key={entry.seq} entry={entry} acts={acts} open={!ended && request.stage === 'clarifying' && entry.seq === open.clarify} />;
       case 'manage_plan': return <PlanBlock key={entry.seq} entry={entry} />;
       case 'package': return <PackageBlock key={entry.seq} entry={entry} acts={acts} open={!ended && request.stage === 'held' && entry.seq === open.pkg} />;

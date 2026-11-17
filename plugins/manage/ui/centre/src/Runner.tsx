@@ -1,10 +1,10 @@
 /**
  * A repository's Runner page: the computer that builds it, whether it answers, the jobs it holds,
- * and the repository's source and policy as they are set (changed in Settings > Repositories).
+ * (the repository's own settings are in Settings > Repositories).
  */
 
 import { useQuery } from '@cortex/sdk';
-import { CHANGED, WATCH, count, loadFailure, minutesText, type Budget, type Repo } from './manage';
+import { CHANGED, WATCH, count, loadFailure, type Repo } from './manage';
 
 /** A job's facts as the runner reports them (the fields this page reads). */
 interface Job {
@@ -48,10 +48,6 @@ function jobLine(job: Job): string {
   return parts.join(' · ');
 }
 
-function budgetText(budget: Budget): string {
-  return `${budget[0]} min · ${budget[1].toLocaleString()} tokens · ${budget[2].toLocaleString()} lines`;
-}
-
 export function RunnerPage({ repoId, repo }: { repoId: string; repo: Repo | undefined }) {
   const runner = useQuery<RunnerAnswer>(
     `manage.runner.get:${repoId}`,
@@ -60,7 +56,6 @@ export function RunnerPage({ repoId, repo }: { repoId: string; repo: Repo | unde
   );
   const data = runner.data;
   const jobs = data?.jobs ?? [];
-  const policy = repo?.policy;
   return (
     <div className="cm-page pad" data-page="runner">
       <div className="cm-sec">
@@ -91,38 +86,6 @@ export function RunnerPage({ repoId, repo }: { repoId: string; repo: Repo | unde
           </div>
         ))}
       </div>
-      {repo && (
-        <div className="cm-sec">
-          <span className="ap">Source</span>
-          <div className="cm-row"><span>Git</span><span className="mono">{repo.source.url}</span></div>
-          <div className="cm-row"><span>Main branch</span><span className="mono">{repo.source.main}</span></div>
-          <div className="cm-row"><span>A landed package</span><span>{repo.source.changes === 'github-pr' ? 'also opens a pull request' : 'goes straight to the main branch'}</span></div>
-        </div>
-      )}
-      {policy && (
-        <div className="cm-sec">
-          <span className="ap">Policy</span>
-          <div className="cm-row"><span>Hold</span><span>safe {minutesText(policy.hold_safe_min)} · minor {minutesText(policy.hold_minor_min)} · at most {minutesText(policy.hold_max_min)}</span></div>
-          <div className="cm-row"><span>Soak</span><span>safe {minutesText(policy.soak_safe_min)} · minor {minutesText(policy.soak_minor_min)} · major {minutesText(policy.soak_major_min)}</span></div>
-          <div className="cm-row"><span>Rework rounds</span><span>safe {policy.rework_safe} · minor {policy.rework_minor} · major {policy.rework_major}</span></div>
-          <div className="cm-row"><span>Budget, safe</span><span>{budgetText(policy.budget_safe)}</span></div>
-          <div className="cm-row"><span>Budget, minor</span><span>{budgetText(policy.budget_minor)}</span></div>
-          <div className="cm-row"><span>Budget, major</span><span>{budgetText(policy.budget_major)}</span></div>
-          <div className="cm-row"><span>Daily train</span><span className="num">{policy.train_at}</span></div>
-        </div>
-      )}
-      {policy && (
-        <div className="cm-sec">
-          <span className="ap">Paths that make a change major</span>
-          {policy.major_paths.length === 0 ? <p className="cm-note faint">None.</p> : <ul className="cm-paths">{policy.major_paths.map((glob) => <li key={glob}>{glob}</li>)}</ul>}
-        </div>
-      )}
-      {policy && (
-        <div className="cm-sec">
-          <span className="ap">Paths that make a change at least minor</span>
-          {policy.minor_paths.length === 0 ? <p className="cm-note faint">None.</p> : <ul className="cm-paths">{policy.minor_paths.map((glob) => <li key={glob}>{glob}</li>)}</ul>}
-        </div>
-      )}
     </div>
   );
 }

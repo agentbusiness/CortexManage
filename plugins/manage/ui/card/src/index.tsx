@@ -4,9 +4,8 @@
  * builds on the mesh.
  */
 
-import { definePlugin, useNow, useQuery } from '@cortex/sdk';
+import { definePlugin, useNow } from '@cortex/sdk';
 import {
-  CHANGED,
   GATE_LABEL,
   RESULT_LABEL,
   STAGES,
@@ -23,7 +22,6 @@ import {
   useOpen,
   type Gate,
   type PackageView,
-  type Repo,
   type RequestView,
 } from './manage';
 import './manage.css';
@@ -77,17 +75,13 @@ function GateRow({ kind, gate, now }: { kind: string; gate: Gate | undefined; no
 
 function Card({ active }: { active?: boolean }) {
   const { selection, request, pack } = useOpen(active !== false);
-  const repos = useQuery<Repo[]>('manage.repo.list', async (client) => (await client.call<{ repos: Repo[] }>('manage.repo.list', {}))?.repos ?? [], { topics: [CHANGED] });
   const now = useNow(60_000, active !== false);
   const data = request.data;
-  const repo = repos.data?.find((candidate) => candidate.id === (data?.repo ?? selection.repo));
   if (selection.view !== 'session' || !selection.request) {
     return <div className="cm-pane" data-build={__CORTEX_BUILD__}><p className="cm-line flush">Open a request in the sidebar to see its card.</p></div>;
   }
-  const kept = (data?.plan?.points ?? []).filter((point) => point.verdict !== 'cut');
   const gates = latestGates(pack.data?.gates ?? []);
   const kinds = [...ALWAYS, ...gates.map((gate) => gate.kind).filter((kind) => !ALWAYS.includes(kind))];
-  const runner = repo ? repo.runner_name || 'this computer' : '';
   return (
     <div className="cm-pane" data-build={__CORTEX_BUILD__} data-request={selection.request}>
       <div className="cm-pane-h">
@@ -104,45 +98,23 @@ function Card({ active }: { active?: boolean }) {
           {data.ended_as && data.ended_as !== 'released' && <p className="cm-note faint">It ended: {data.ended_as}.</p>}
         </div>
       )}
-      <div className="cm-sec">
-        <span className="ap">Package</span>
-        {pack.error && !pack.data && <p className="inline-error">{loadFailure('The package', pack)}</p>}
-        {data && !data.package && (
-          <>
-            <p className="cm-note faint">Not in a package yet.</p>
-            {kept.length > 0 && <div className="cm-row"><span>Plan</span><span>{count(kept.length, 'task')}</span></div>}
-          </>
-        )}
-        {pack.data && (
-          <>
-            <div className="cm-row">
-              <span>{count(pack.data.requests.length, 'request')} · {count(pack.data.points.length, 'task')}</span>
-              <span className={`tag ${pack.data.tier}`}>{TIER_LABEL[pack.data.tier] ?? pack.data.tier}</span>
-            </div>
-            <div className="cm-row"><span>Branch</span><span className="mono">{pack.data.branch || 'not cut yet'}</span></div>
-            <div className="cm-row">
-              <span>Budget</span>
-              <span className="num">{pack.data.budget[0]} min · {pack.data.budget[1].toLocaleString()} tokens · {pack.data.budget[2].toLocaleString()} lines</span>
-            </div>
-            {(pack.data.attempt > 1 || pack.data.reworks > 0) && (
-              <div className="cm-row"><span>Attempt</span><span className="num">{pack.data.attempt} · {count(pack.data.reworks, 'rework round')} used</span></div>
-            )}
-            {pack.data.parts.length > 0 && <div className="cm-row"><span>Parts</span><span>{pack.data.parts.join(', ')}</span></div>}
-            {pack.data.urgent && <div className="cm-row"><span>Urgent</span><span className="ap live">No hold</span></div>}
-          </>
-        )}
-      </div>
-      <div className="cm-sec">
-        <span className="ap">Gates</span>
-        {kinds.map((kind) => <GateRow key={kind} kind={kind} gate={gates.find((gate) => gate.kind === kind)} now={now} />)}
-      </div>
-      <div className="cm-sec">
-        <span className="ap">On the mesh</span>
-        {repos.error && !repos.data && <p className="inline-error">{loadFailure('The repository', repos)}</p>}
-        <div className="cm-row"><span>Runner</span><span>{runner ? `CortexCode · ${runner}` : 'not known'}</span></div>
-        <div className="cm-row"><span>Model</span><span>Qwen · coding</span></div>
-        <div className="cm-row"><span>Releases build on</span><span>{runner || 'not known'}</span></div>
-      </div>
+      {pack.error && !pack.data && <p className="inline-error">{loadFailure('The package', pack)}</p>}
+      {pack.data && (pack.data.requests.length > 1 || pack.data.attempt > 1 || pack.data.reworks > 0 || pack.data.urgent) && (
+        <div className="cm-sec">
+          <span className="ap">Package</span>
+          {pack.data.requests.length > 1 && <div className="cm-row"><span>Built together</span><span>{count(pack.data.requests.length, 'request')}</span></div>}
+          {(pack.data.attempt > 1 || pack.data.reworks > 0) && (
+            <div className="cm-row"><span>Attempt</span><span className="num">{pack.data.attempt} · {count(pack.data.reworks, 'rework round')} used</span></div>
+          )}
+          {pack.data.urgent && <div className="cm-row"><span>Urgent</span><span className="ap live">No hold</span></div>}
+        </div>
+      )}
+      {gates.length > 0 && (
+        <div className="cm-sec">
+          <span className="ap">Gates</span>
+          {kinds.map((kind) => <GateRow key={kind} kind={kind} gate={gates.find((gate) => gate.kind === kind)} now={now} />)}
+        </div>
+      )}
     </div>
   );
 }
