@@ -1,7 +1,8 @@
 /**
  * workbench.sidebar@1 — at the top New request and Add repo, each a small form in place. Then the
  * repositories, and under each its open requests: a package of several requests is a bracket
- * around them. Below, under its own heading, the code the Cortex apps share (the mesh standard).
+ * around them. Below, under its own heading, the shared standard, only when the person's
+ * repositories carry one.
  * Pressing a repository's name opens its page; pressing a request opens its session.
  */
 
@@ -163,6 +164,19 @@ function StandardRow({ selection, open }: { selection: Selection; open: (next: S
   );
 }
 
+/** The shared standard, only for a person whose repositories carry one: with no member of a
+ * standard there is nothing to show, and nothing is shown. */
+function SharedStandard({ selection, open }: { selection: Selection; open: (next: Selection) => void }) {
+  const members = useQuery<unknown[]>('standard.member.list', async (client) => (await client.call<{ members: unknown[] }>('standard.member.list', {}))?.members ?? [], { topics: ['standard.changed'] });
+  if (!members.data || members.data.length === 0) return null;
+  return (
+    <>
+      <div className="index-h cm-side-shared"><Cross /><span className="ap">Shared by every app</span></div>
+      <StandardRow selection={selection} open={open} />
+    </>
+  );
+}
+
 function NewRequest({ repos, selection, done }: { repos: Repo[]; selection: Selection; done: (next: Selection | null) => void }) {
   const client = useClient();
   const act = useAct();
@@ -305,8 +319,7 @@ function Sidebar() {
         {repos.error && !repos.data && <p className="inline-error">{loadFailure('The repositories', repos)}</p>}
         {repos.data && list.length === 0 && <p className="cm-line flush">No repository yet. Add one with Add repo.</p>}
         {list.map((repo, index) => <RepoBlock key={repo.id} repo={repo} index={index} selection={selection} open={setSelection} now={now} />)}
-        <div className="index-h cm-side-shared"><Cross /><span className="ap">Shared by every app</span></div>
-        <StandardRow selection={selection} open={setSelection} />
+        <SharedStandard selection={selection} open={setSelection} />
       </div>
     </div>
   );

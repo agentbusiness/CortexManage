@@ -73,53 +73,10 @@ fn sort(members: &mut [Member]) {
     members.sort_by(|a, b| b.priority.cmp(&a.priority).then(a.id.cmp(&b.id)));
 }
 
-/// The folders of an app built on the frame.
-fn framed() -> BTreeMap<String, String> {
-    [
-        ("protocol", "protocol"),
-        ("mesh", "plugins/mesh/backend/src"),
-        ("service-kit", "service-kit"),
-        ("sandbox-kit", "sandbox-kit"),
-        ("model-kit", "model-kit"),
-        ("shared-models", "shared-models"),
-        ("memory", "plugins/memory-irongraph/backend/src"),
-        ("theme", "plugins/theme-cortex/ui/theme"),
-    ]
-    .into_iter()
-    .map(|(part, folder)| (part.to_owned(), folder.to_owned()))
-    .collect()
-}
-
-/// The members of the standard as docs/specs/04-STANDARD.md §1 lists them, for the first start.
-/// A checkout is named only when its folder is on this computer (`~/DEV/<name>`); any other
-/// folder, and a member without a frame, are set in the Standard view. Reads the disk.
+/// No member is built in: which repositories share a standard is the person's own, added in the
+/// Standard view. With no member there is no standard, and nothing about one is shown.
 fn defaults() -> Vec<Member> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let here = |name: &str| {
-        let root = Path::new(&home).join("DEV").join(name);
-        if !home.is_empty() && root.is_dir() { root.to_string_lossy().into_owned() } else { String::new() }
-    };
-    let member = |id: &str, name: &str, priority: u32| Member {
-        id: id.to_owned(),
-        name: name.to_owned(),
-        priority,
-        folders: framed(),
-        without: Vec::new(),
-        deferred: false,
-        root: here(name),
-        names: vec![name.to_owned(), id.to_owned()],
-    };
-    // CortexAgent is left out for now (the owner's decision of 2026-11-16): listed, never checked.
-    let mut agent = member("cortexagent", "CortexAgent", 20);
-    agent.root = String::new();
-    agent.deferred = true;
-    vec![
-        member("cortexmodelserver", "CortexModelServer", 50),
-        member("cortexcode", "CortexCode", 30),
-        agent,
-        member("cortexterm", "CortexTerm", 10),
-        member("cortexmanage", "CortexManage", 5),
-    ]
+    Vec::new()
 }
 
 /// A blocking piece of work (file reads) off the async threads.
@@ -516,7 +473,8 @@ impl Standard {
 
     /// Every standard path of a member, as globs relative to its repository's root.
     async fn paths(&self, member: &str) -> Result<Vec<String>, RpcError> {
-        let member = self.member(member.trim())?;
+        // A repository that is in no standard has no standard path.
+        let Ok(member) = self.member(member.trim()) else { return Ok(Vec::new()) };
         let parts = self.read_parts().await;
         let mut paths: Vec<String> = Self::carried(&member, &parts).flat_map(|(part, folder)| part.files.iter().map(move |pattern| format!("{folder}/{}", pattern.trim_matches('/')))).collect();
         paths.push(LOCK_FILE.to_owned());
@@ -525,7 +483,8 @@ impl Standard {
 
     /// Which of these changed paths are standard files of the member (as they were given).
     async fn touches(&self, params: DiffParams) -> Result<Vec<String>, RpcError> {
-        let member = self.member(params.member.trim())?;
+        // A repository that is in no standard touches no standard file.
+        let Ok(member) = self.member(params.member.trim()) else { return Ok(Vec::new()) };
         let parts = self.read_parts().await;
         let root = member.root.trim_end_matches('/');
         let touched = params
