@@ -29,6 +29,7 @@ const EMBEDDED: &[(&str, &str)] = &[
     ("prompts/converge.md", include_str!("../data/prompts/converge.md")),
     ("prompts/digest.md", include_str!("../data/prompts/digest.md")),
     ("prompts/why.md", include_str!("../data/prompts/why.md")),
+    ("prompts/reply.md", include_str!("../data/prompts/reply.md")),
     ("schemas/assess.json", include_str!("../data/schemas/assess.json")),
     ("schemas/match.json", include_str!("../data/schemas/match.json")),
     ("schemas/plan.json", include_str!("../data/schemas/plan.json")),
@@ -39,7 +40,7 @@ const EMBEDDED: &[(&str, &str)] = &[
 ];
 
 /// The stages the flow runs; each must be in `stages.toml`.
-pub const STAGES: &[&str] = &["ASSESS", "MATCH", "DISCOVER", "PLAN", "VALIDATE", "DRIFT", "CONVERGE", "DIGEST", "WHY"];
+pub const STAGES: &[&str] = &["ASSESS", "MATCH", "DISCOVER", "PLAN", "VALIDATE", "DRIFT", "CONVERGE", "DIGEST", "WHY", "REPLY"];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

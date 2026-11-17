@@ -113,7 +113,7 @@ fn probe(env: &PluginEnv) -> Vec<ProbeCheck> {
         checks.push(check(&stage.to_lowercase(), outcome, started));
     }
     // The two stages without a schema: their prompts, and the tag each claims.
-    for stage in ["DISCOVER", "DIGEST"] {
+    for stage in ["DISCOVER", "DIGEST", "REPLY"] {
         let started = Instant::now();
         let outcome = data.stage(stage).map_err(|error| error.message).and_then(|config| {
             if data.system(config).trim().is_empty() { Err("its prompt is empty".to_owned()) } else { Ok(format!("prompt read; claims a `{}` model", config.tag)) }

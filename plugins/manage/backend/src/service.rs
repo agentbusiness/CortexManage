@@ -765,7 +765,6 @@ impl Manager {
         if text.is_empty() {
             return Err(RpcError::invalid_params("nothing was said"));
         }
-        let session = rec.r.session_id.clone();
         // The chat flow's turn wrote the person's message into the thread before it called this.
         let answer = if !rec.r.ended_as.is_empty() {
             self.t("say_closed", &[("as", &rec.r.ended_as)])
@@ -788,7 +787,7 @@ impl Manager {
                 }
             }
         };
-        self.line(&session, &answer).await;
+        // The chat flow shows the answer in the thread: the model's own, or this line.
         Ok(json!({"text": answer}))
     }
 

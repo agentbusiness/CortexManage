@@ -96,6 +96,14 @@ prompts = ["digest"]
 sampling = "decision"
 max_tokens = 160
 
+# What the manager says back when a person writes in a session. Free writing; nothing is decided
+# from it.
+[stage.REPLY]
+tag = "coding"
+prompts = ["reply"]
+sampling = "decision"
+max_tokens = 220
+
 [stage.WHY]
 tag = "coding"
 prompts = ["why"]

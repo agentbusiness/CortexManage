@@ -1,10 +1,11 @@
 //! The flow as the frame sees it: the `chatflow@1` verbs a request's session needs, and the
 //! manager's stage methods (`manage::flow`), which the manage plugin calls.
 //!
-//! A request's session is not a conversation with a model. What a person writes there goes to the
-//! manage plugin (`manage.request.say`), which adds it to the request or steers the builder and
-//! answers with the line to show. So `turn` and `steer` are the same thing here, and the verbs of
-//! a coding conversation (plans, specs, approvals, attachments) are not part of this flow.
+//! A request's session is a conversation about one change. What a person writes there goes to the
+//! manage plugin (`manage.request.say`), which adds it to the request or steers the builder. Before
+//! the building starts the model answers them (REPLY), from the request as it stands; the manage
+//! plugin's own line is shown when the model does not answer and from the building on. The verbs
+//! of a coding conversation (plans, specs, approvals, attachments) are not part of this flow.
 
 use crate::data::Data;
 use cc_protocol::contracts::chatflow::{FlowState, RunningResult, TurnResult, verbs};
@@ -68,6 +69,23 @@ struct SessionOnly {
 struct Facts {
     #[serde(default)]
     facts: Value,
+}
+
+/// What the model is told about a request it talks about, while it can still change: before the
+/// building starts and not ended. None from the building on, where the text goes to the builder.
+fn talk_facts(view: &Value) -> Option<Value> {
+    let text = |name: &str| view.get(name).and_then(Value::as_str).unwrap_or("").to_owned();
+    if !text("ended_as").is_empty() || !matches!(text("stage").as_str(), "arrived" | "assessed" | "planned" | "validated" | "held") {
+        return None;
+    }
+    let points: Vec<Value> =
+        view.get("plan").and_then(|plan| plan.get("points")).and_then(Value::as_array).into_iter().flatten().filter_map(|point| point.get("title").cloned()).collect();
+    let rated = [text("kind"), text("tier")].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join(", ");
+    Some(json!({
+        "the_request_so_far": text("text"),
+        "rated_as": rated,
+        "the_plan_so_far": points,
+    }))
 }
 
 impl Flow {
@@ -164,7 +182,7 @@ impl Flow {
         tokio::spawn(async move {
             let cancel = running.cancel.clone();
             let said = tokio::select! {
-                said = flow.say(&session, &text) => said,
+                said = flow.say(&session, &text, &cancel) => said,
                 _ = cancel.cancelled() => Err(RpcError::cancelled()),
             };
             let entry = match said {
@@ -181,12 +199,23 @@ impl Flow {
         to_value(&TurnResult { run_id, queued_as_steer: false })
     }
 
-    async fn say(&self, session: &str, text: &str) -> Result<String, RpcError> {
+    async fn say(&self, session: &str, text: &str, cancel: &CancellationToken) -> Result<String, RpcError> {
         let request = self.request_of(session).await?;
+        // The request as it stood before this message: what the model answers from.
+        let before = self.ctx()?.call(manage_methods::REQUEST_GET, json!({"id": request})).await.ok();
         let params = to_value(&SayParams { request, text: text.to_owned() })?;
         let answer = self.ctx()?.call(manage_methods::REQUEST_SAY, params).await?;
         let line = answer.get("text").and_then(Value::as_str).unwrap_or("").trim().to_owned();
-        Ok(if line.is_empty() { self.data()?.text("no_line", &[]) } else { line })
+        let line = if line.is_empty() { self.data()?.text("no_line", &[]) } else { line };
+        let Some(facts) = before.as_ref().and_then(talk_facts) else { return Ok(line) };
+        match self.reply(&facts, text, cancel).await {
+            Ok(reply) => Ok(reply),
+            Err(error) if error.code == codes::CANCELLED => Err(error),
+            Err(error) => {
+                tracing::warn!(error = %error.message, "the model did not answer in the session; the manager's own line is shown");
+                Ok(line)
+            }
+        }
     }
 
     pub async fn dispatch(self: &Arc<Self>, verb: &str, params: Value, caller: &CancellationToken) -> Result<Value, RpcError> {

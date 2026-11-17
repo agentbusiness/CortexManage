@@ -493,6 +493,24 @@ impl Flow {
         Ok(lines.join("\n"))
     }
 
+    /// REPLY: what the manager says back to a person in a session. Free writing; nothing is
+    /// decided from it.
+    pub async fn reply(&self, facts_value: &Value, wrote: &str, cancel: &CancellationToken) -> Result<String, RpcError> {
+        let data = self.data()?;
+        let ctx = self.ctx()?;
+        let config = data.stage("REPLY")?;
+        let user = blocks(&[data.text("reply_facts", &[("facts", &facts(facts_value))]), data.text("reply_wrote", &[("text", wrote)]), data.text("reply_step", &[])]);
+        let key = llm::key("REPLY");
+        let ask = Ask { stage: "REPLY", config, key: &key, messages: vec![ChatMessage::new("system", data.system(config)), ChatMessage::new("user", user)], tools: Vec::new(), grammar: None };
+        let result = llm::chat(ctx, &data, ask, cancel).await;
+        llm::end(ctx, &key).await;
+        let text = result?.content.trim().to_owned();
+        if text.is_empty() {
+            return Err(RpcError::new(codes::UNAVAILABLE, "the model wrote no answer"));
+        }
+        Ok(text)
+    }
+
     pub async fn why(&self, facts_value: &Value, cancel: &CancellationToken) -> Result<WhyAnswer, RpcError> {
         let data = self.data()?;
         let shape = data.shape(data.stage("WHY")?).cloned().ok_or_else(|| RpcError::internal("WHY has no schema"))?;
