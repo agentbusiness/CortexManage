@@ -17,12 +17,6 @@
 folders = ["target", "node_modules", "dist", ".git"]
 files = ["Cargo.lock", "package-lock.json", ".DS_Store"]
 
-# A member's own values inside a standard file. Its names (`names` of the member) are replaced
-# wherever they stand. Its serving priority is a bare number, so it is replaced only where it
-# directly follows one of these texts (mesh `lib.rs`: `pub const SHARING_PRIORITY: u32 = 30;`).
-[own]
-priority_after = ["SHARING_PRIORITY: u32 = "]
-
 # The wire and the shared contracts (the `cc-protocol` crate).
 #
 # In: the wire files, the same bytes in all five copies (codec, conn, envelope, host, version,

@@ -6,7 +6,6 @@
 #cc .cm-side .nav li{margin-bottom:0;}
 /* A repository left out is listed, greyed. */
 #cc .cm-repo.off .kk,#cc .cm-repo.off .nm{color:var(--unwritten);}
-#cc .cm-side .nav .kk.drift{color:var(--rubric);}
 
 #cc .cm-sess{list-style:none;margin:2px 0 8px;padding:0 0 0 30px;}
 #cc .cm-sess button{
@@ -33,7 +32,6 @@
 #cc .cm-side-form>.ap{display:block;margin-bottom:9px;}
 #cc .cm-side-form .inline-error{margin:0;}
 #cc .cm-side-acts{flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 16px 9px;}
-#cc .cm-side .cm-side-shared{margin:22px 0 10px;}
 
 /* Add repository from GitHub: the sheet, as CortexCode's New project from GitHub */
 #cc .cx-np-row{display:flex;align-items:center;gap:8px;min-width:0;}

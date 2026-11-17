@@ -1,5 +1,6 @@
-//! The checks kept by code: plain structural tests over a change's file list and the lines its
-//! unified diff adds. What each one looks for is in `data/checks.toml`, with the sentence a person
+//! The checks kept by code: whether a change touches a file CortexManage prints (a fixed path), and
+//! whether a line it adds holds a secret. No check decides by a folder's or a file's name what a
+//! change is (AGENTS.md, law 9): such a rule is kept by the validator, which names a line. What each one looks for is in `data/checks.toml`, with the sentence a person
 //! reads. A check is reported as run only when it could really decide: a check that needs a file's
 //! added lines did not run when that file is named but its diff is missing.
 
@@ -7,10 +8,6 @@ use crate::book::shown_id;
 use crate::data::{Checks, fill};
 use cc_protocol::contracts::charter::{CheckAnswer, CheckFinding, CheckParams, Rule, kept_by};
 
-pub const NO_RECORD_FILES: &str = "no-record-files";
-pub const NO_TESTS: &str = "no-tests";
-pub const NO_NATIVE_CONTROLS: &str = "no-native-controls";
-pub const THEME_UNTOUCHED: &str = "theme-untouched";
 pub const NO_SECRETS: &str = "no-secrets";
 pub const AGENTS_FILE_UNTOUCHED: &str = "agents-file-untouched";
 
@@ -33,11 +30,6 @@ impl Changed {
         self.path.rsplit('/').next().unwrap_or(&self.path)
     }
 
-    fn folders(&self) -> Vec<&str> {
-        let mut parts: Vec<&str> = self.path.split('/').collect();
-        parts.pop();
-        parts
-    }
 }
 
 /// `a/x b/x` -> `x`; a path with a timestamp after a tab loses it.
@@ -154,105 +146,6 @@ struct Outcome {
     found: Vec<(String, u32, Vec<(&'static str, String)>)>,
 }
 
-fn ends_with_any(name: &str, endings: &[String]) -> Option<String> {
-    endings.iter().find(|ending| name.ends_with(ending.as_str())).cloned()
-}
-
-/// A new record-shaped file under a plugin's backend or data folder.
-fn no_record_files(files: &[Changed], data: &Checks) -> Outcome {
-    let records = &data.records;
-    let mut out = Outcome { ran: true, found: Vec::new() };
-    for file in files.iter().filter(|file| !file.gone) {
-        let name = file.name();
-        let Some(ending) = ends_with_any(name, &records.endings) else { continue };
-        let allowed = records.allowed_names.iter().any(|allowed| allowed == name)
-            || records.allowed_starts.iter().any(|start| name.starts_with(start.as_str()))
-            || records.allowed_ends.iter().any(|end| name.ends_with(end.as_str()));
-        if allowed {
-            continue;
-        }
-        // `plugins/<id>/…/<folder>/…`: the folder is looked for below the plugin's own folder.
-        let folders = file.folders();
-        let Some(plugins_at) = folders.iter().position(|folder| *folder == "plugins") else { continue };
-        let Some(folder) = folders.iter().skip(plugins_at + 2).find(|folder| records.folders.iter().any(|known| known == *folder)) else { continue };
-        if !file.in_diff {
-            // Only the diff says whether a file is new: this one cannot be decided.
-            out.ran = false;
-        } else if file.new {
-            out.found.push((file.path.clone(), 0, vec![("ending", ending), ("folder", (*folder).to_owned())]));
-        }
-    }
-    out
-}
-
-/// Test code, test folders, test files.
-fn no_tests(files: &[Changed], data: &Checks) -> Outcome {
-    let tests = &data.tests;
-    let mut out = Outcome { ran: true, found: Vec::new() };
-    for file in files.iter().filter(|file| !file.gone) {
-        if let Some(folder) = file.folders().into_iter().find(|folder| tests.folders.iter().any(|known| known == folder)) {
-            out.found.push((file.path.clone(), 0, vec![("what", format!("it is in a `{folder}` folder"))]));
-            continue;
-        }
-        let parts: Vec<&str> = file.name().split('.').collect();
-        if parts.len() >= 3
-            && let Some(part) = parts[1..parts.len() - 1].iter().find(|part| tests.name_parts.iter().any(|known| known == *part))
-        {
-            out.found.push((file.path.clone(), 0, vec![("what", format!("its name has `.{part}.`"))]));
-            continue;
-        }
-        if ends_with_any(file.name(), &tests.line_endings).is_none() {
-            continue;
-        }
-        if !file.in_diff {
-            out.ran = false;
-            continue;
-        }
-        for (line, text) in &file.added {
-            if let Some(start) = tests.line_starts.iter().find(|start| text.trim_start().starts_with(start.as_str())) {
-                out.found.push((file.path.clone(), *line, vec![("what", format!("line {line} starts with `{start}`"))]));
-            }
-        }
-    }
-    out
-}
-
-/// `<name` as the start of an element: followed by a space, `>`, `/` or the line's end.
-fn has_tag(text: &str, name: &str) -> bool {
-    let open = format!("<{name}");
-    text.match_indices(&open).any(|(at, _)| text[at + open.len()..].chars().next().is_none_or(|next| next.is_whitespace() || next == '>' || next == '/'))
-}
-
-fn no_native_controls(files: &[Changed], data: &Checks) -> Outcome {
-    let controls = &data.controls;
-    let mut out = Outcome { ran: true, found: Vec::new() };
-    for file in files.iter().filter(|file| !file.gone && ends_with_any(file.name(), &controls.endings).is_some()) {
-        if !file.in_diff {
-            out.ran = false;
-            continue;
-        }
-        for (line, text) in &file.added {
-            for mark in &controls.mark {
-                let hit = (!mark.tag.is_empty() && has_tag(text, &mark.tag)) || (!mark.text.is_empty() && text.contains(&mark.text));
-                if hit {
-                    out.found.push((file.path.clone(), *line, vec![("what", format!("{} on line {line}", mark.what))]));
-                }
-            }
-        }
-    }
-    out
-}
-
-fn theme_untouched(files: &[Changed], data: &Checks, standard_change: bool) -> Outcome {
-    let folder = data.theme.folder.as_str();
-    let found = if standard_change || folder.is_empty() {
-        Vec::new()
-    } else {
-        files.iter().filter(|file| file.path.starts_with(folder)).map(|file| (file.path.clone(), 0, Vec::new())).collect()
-    };
-    Outcome { ran: true, found }
-}
-
 fn agents_file_untouched(files: &[Changed], data: &Checks, standard_change: bool) -> Outcome {
     let found = if standard_change {
         Vec::new()
@@ -355,10 +248,6 @@ fn no_secrets(files: &[Changed], data: &Checks) -> Outcome {
 pub fn run(params: &CheckParams, rules: &[Rule], data: &Checks) -> CheckAnswer {
     let files = changed_files(params);
     let outcomes = [
-        (NO_RECORD_FILES, no_record_files(&files, data)),
-        (NO_TESTS, no_tests(&files, data)),
-        (NO_NATIVE_CONTROLS, no_native_controls(&files, data)),
-        (THEME_UNTOUCHED, theme_untouched(&files, data, params.standard_change)),
         (NO_SECRETS, no_secrets(&files, data)),
         (AGENTS_FILE_UNTOUCHED, agents_file_untouched(&files, data, params.standard_change)),
     ];

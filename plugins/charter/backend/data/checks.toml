@@ -1,33 +1,10 @@
-# The checks kept by code. Each one is a small function over a change's file list and the lines its
-# diff adds; this file holds what each check looks for and the sentence a person reads when it
+# The checks kept by code: a file CortexManage prints was touched, a line holds a secret. No check
+# tells what a change is from a folder's or a file's name. Each one is a small function over a
+# change's file list and the lines its diff adds; this file holds what each check looks for and the sentence a person reads when it
 # finds something. `{name}` is filled in by the code; keep every placeholder.
 #
 # A check is listed as run only when it could really decide. A check with `not_run` never runs:
 # the reason is written there.
-
-[[check]]
-id = "no-record-files"
-title = "No record files"
-keeps = "The graph is the only record. A plugin does not write its records to a file."
-finding = "{file} is a new `{ending}` file under a plugin's `{folder}` folder. Records belong in the graph."
-
-[[check]]
-id = "no-tests"
-title = "No tests"
-keeps = "No test code and no test folders. A plugin's probe exercises it for real."
-finding = "{file} adds a test: {what}."
-
-[[check]]
-id = "no-native-controls"
-title = "No native controls"
-keeps = "The theme's controls only: no native select, checkbox or radio."
-finding = "{file} adds {what}. Use the theme's control instead."
-
-[[check]]
-id = "theme-untouched"
-title = "Theme untouched"
-keeps = "The theme changes only in a standard change."
-finding = "{file} is part of the theme, and this is not a standard change."
 
 [[check]]
 id = "no-secrets"
@@ -40,64 +17,6 @@ id = "agents-file-untouched"
 title = "Printed files untouched"
 keeps = "AGENTS.md and standard.lock are printed by CortexManage. A builder does not edit them."
 finding = "{file} is printed by CortexManage, and this is not a charter or standard change."
-
-[[check]]
-id = "contract-calls-only"
-title = "Contract calls only"
-keeps = "A plugin names only the methods its plugin.toml lists under `uses`."
-finding = "{file} calls `{what}`, which the plugin's plugin.toml does not list under `uses`."
-not_run = "A diff does not hold the plugin's plugin.toml, and a method name in a line cannot be told from any other text by code alone. This check waits for a caller that sends the manifest."
-
-# ----- no-record-files -----
-# A NEW file (the diff says it did not exist) whose name ends in one of `endings`, somewhere under
-# `plugins/<id>/` inside a folder named in `folders`. The names below are configuration, not records.
-[records]
-endings = [".json", ".sqlite", ".db"]
-folders = ["backend", "data"]
-allowed_names = ["package.json", "package-lock.json", "manifest.json", "schema.json"]
-allowed_starts = ["tsconfig"]
-allowed_ends = [".schema.json", ".lock", ".lock.json", "-lock.json"]
-
-# ----- no-tests -----
-# An added line of a `.rs` file that starts (after spaces) with one of `line_starts`; a changed file
-# inside a folder named in `folders`; a file whose name has one of `name_parts` between two dots
-# (`thing.test.ts`).
-[tests]
-line_endings = [".rs"]
-line_starts = ["#[cfg(test)]", "#![cfg(test)]", "#[test]", "#[tokio::test"]
-folders = ["tests"]
-name_parts = ["test", "spec"]
-
-# ----- no-native-controls -----
-# An added line of a file ending in one of `endings` that holds one of the marks. A `tag` mark is
-# the start of an element (`<select`, then a space, `>`, `/` or the line's end); a `text` mark is
-# that exact text.
-[controls]
-endings = [".tsx", ".jsx", ".html"]
-
-[[controls.mark]]
-tag = "select"
-what = "a native select"
-
-[[controls.mark]]
-text = 'type="checkbox"'
-what = "a native checkbox"
-
-[[controls.mark]]
-text = "type='checkbox'"
-what = "a native checkbox"
-
-[[controls.mark]]
-text = 'type="radio"'
-what = "a native radio button"
-
-[[controls.mark]]
-text = "type='radio'"
-what = "a native radio button"
-
-# ----- theme-untouched -----
-[theme]
-folder = "plugins/theme-cortex/"
 
 # ----- agents-file-untouched -----
 # A changed file with one of these names, in any folder.

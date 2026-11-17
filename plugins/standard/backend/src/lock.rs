@@ -1,10 +1,9 @@
-//! The lock and the check against it: hashing a member's copies (with the member's own values
-//! replaced where a file carries them), comparing every member's copies with the lock, and the
-//! lock as the text of `standard.lock`.
+//! The lock and the check against it: hashing a member's copies byte for byte, comparing every
+//! member's copies with the lock, and the lock as the text of `standard.lock`.
 //!
 //! Everything here reads files with plain `std::fs` and is run in `spawn_blocking` by the service.
 
-use crate::parts::{Own, Parts, is_text};
+use crate::parts::Parts;
 use cc_protocol::contracts::standard::{Cell, Lock, LockFile, Member, Report};
 use cc_protocol::sha256;
 use std::collections::BTreeSet;
@@ -12,73 +11,10 @@ use std::path::Path;
 
 /// How many differing files a cell lists (the contract's limit).
 const CELL_FILES: usize = 20;
-/// What a member's priority becomes in a file hashed with its own values replaced.
-const PRIORITY: &str = "<<priority>>";
-
-/// What one of a member's names becomes. Names of different shapes get different placeholders,
-/// so `cortexterm` where the standard has `CortexTerm` is still a difference.
-fn placeholder(name: &str) -> String {
-    let letters = |test: fn(char) -> bool| name.chars().any(test);
-    let case = match (letters(char::is_uppercase), letters(char::is_lowercase)) {
-        (true, true) => "mixed",
-        (true, false) => "upper",
-        _ => "lower",
-    };
-    let marks: BTreeSet<char> = name.chars().filter(|c| !c.is_alphanumeric()).collect();
-    format!("<<name:{case}{}>>", marks.into_iter().collect::<String>())
-}
-
-/// `text` with the member's own values replaced: its names wherever they stand, its priority
-/// where it directly follows one of the texts `own` lists.
-fn without_own(text: &str, member: &Member, own: &Own) -> String {
-    // The longest name first, so a name that holds another is taken whole.
-    let mut names: Vec<(&str, String)> = member.names.iter().filter(|name| !name.is_empty()).map(|name| (name.as_str(), placeholder(name))).collect();
-    names.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.0.cmp(b.0)));
-    let priority = member.priority.to_string();
-    let before: Vec<&str> = own.priority_after.iter().map(String::as_str).filter(|text| !text.is_empty()).collect();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    'text: while !rest.is_empty() {
-        for (name, placeholder) in &names {
-            if let Some(after) = rest.strip_prefix(name) {
-                out.push_str(placeholder);
-                rest = after;
-                continue 'text;
-            }
-        }
-        for prefix in &before {
-            let Some(after) = rest.strip_prefix(prefix) else { continue };
-            // The whole number, not the start of a longer one.
-            if let Some(tail) = after.strip_prefix(priority.as_str())
-                && !tail.starts_with(|c: char| c.is_ascii_digit())
-            {
-                out.push_str(prefix);
-                out.push_str(PRIORITY);
-                rest = tail;
-                continue 'text;
-            }
-        }
-        let mut chars = rest.chars();
-        if let Some(c) = chars.next() {
-            out.push(c);
-        }
-        rest = chars.as_str();
-    }
-    out
-}
-
-/// A file's hash for the lock: of its bytes, or, when it carries the member's own values, of its
-/// text with those replaced (`names`).
-pub fn hash(bytes: &[u8], member: &Member, own: &Own) -> (String, bool) {
-    if is_text(bytes)
-        && let Ok(text) = std::str::from_utf8(bytes)
-    {
-        let replaced = without_own(text, member, own);
-        if replaced != text {
-            return (sha256::hex(replaced.as_bytes()), true);
-        }
-    }
-    (sha256::hex(bytes), false)
+/// A file's hash for the lock: of its bytes, as they are. Two copies are the same file only when
+/// they are the same bytes.
+pub fn hash(bytes: &[u8]) -> String {
+    sha256::hex(bytes)
 }
 
 /// The folder of a part in a member's checkout (none: the member has no folder for it).
@@ -101,8 +37,7 @@ pub fn files_of(member: &Member, parts: &Parts) -> Result<Vec<LockFile>, String>
         let dir = root.join(relative);
         for path in parts.files_in(part, &dir) {
             let bytes = std::fs::read(dir.join(&path)).map_err(|error| format!("cannot read {}: {error}", dir.join(&path).display()))?;
-            let (sha256, names) = hash(&bytes, member, &parts.own);
-            files.push(LockFile { part: part.id.clone(), path, sha256, names });
+            files.push(LockFile { part: part.id.clone(), path, sha256: hash(&bytes), names: false });
         }
     }
     if files.is_empty() {
@@ -145,20 +80,14 @@ fn compare(member: &Member, part: &str, lock: &Lock, parts: &Parts) -> Cell {
         return cell(member, part, "missing", all());
     }
     let mut differing = Vec::new();
-    let (mut absent, mut by_names) = (0usize, false);
+    let mut absent = 0usize;
     for file in &locked {
         let Ok(bytes) = std::fs::read(dir.join(&file.path)) else {
             absent += 1;
             differing.push(file.path.clone());
             continue;
         };
-        if !file.names && sha256::hex(&bytes) == file.sha256 {
-            continue;
-        }
-        let (sha256, _) = hash(&bytes, member, &parts.own);
-        if sha256 == file.sha256 {
-            by_names = true;
-        } else {
+        if hash(&bytes) != file.sha256 {
             differing.push(file.path.clone());
         }
     }
@@ -170,13 +99,7 @@ fn compare(member: &Member, part: &str, lock: &Lock, parts: &Parts) -> Cell {
     if !locked.is_empty() && absent == locked.len() && differing.len() == absent {
         return cell(member, part, "missing", differing);
     }
-    let state = if !differing.is_empty() {
-        "differs"
-    } else if by_names {
-        "names"
-    } else {
-        "same"
-    };
+    let state = if differing.is_empty() { "same" } else { "differs" };
     cell(member, part, state, differing)
 }
 

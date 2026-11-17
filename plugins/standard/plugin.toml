@@ -29,17 +29,3 @@ uses = [
   "mesh.peers", "mesh.call",
 ]
 
-[ui]
-dir = "ui"
-build = ["npm", "run", "build"]
-
-# The Standard view in the centre: one row per part, one column per member.
-[[ui.package]]
-dir = "ui/page"
-id = "standard.page"
-slot = "page.standard@1"
-
-# Which files of each part are the standard (parts.toml): packed at the same path; the app reads
-# and edits it live in the live folder (<home>/live/plugins/standard/backend/data).
-[data]
-dirs = ["backend/data"]

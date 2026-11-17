@@ -533,10 +533,8 @@ impl Manager {
             }
             given
         } else {
-            prefix_candidates(&name)
-                .into_iter()
-                .find(|candidate| !prefixes.contains(candidate))
-                .ok_or_else(|| RpcError::invalid_params("give a prefix of two or three letters for this repository's request ids: the ones its name suggests are taken"))?
+            // No letters are taken from the name: the next free number, `R1`, `R2`, ...
+            (1u32..).map(|number| format!("R{number}")).find(|candidate| !prefixes.contains(candidate)).unwrap_or_default()
         };
         let mut source = params.source;
         if source.kind.is_empty() {
@@ -894,7 +892,7 @@ impl Manager {
         check("policy.hold", hold_ok, "safe by the clock, capped at the longest hold, major without a clock, urgent at once".into(), started);
 
         let started = std::time::Instant::now();
-        let ids_ok = crate::store::request_id("CT", 142) == "CT-0142" && repo_id("Cortex Term") == "cortexterm" && prefix_candidates("CortexTerm").first().map(String::as_str) == Some("CT");
+        let ids_ok = crate::store::request_id("CT", 142) == "CT-0142" && repo_id("Cortex Term") == "cortexterm";
         let version = env!("CARGO_PKG_VERSION");
         check("ids", ids_ok && !version.is_empty(), format!("version {version}, request ids like CT-0142"), started);
 
@@ -951,27 +949,6 @@ fn id_of(params: &Value) -> Result<String, RpcError> {
 /// `Cortex Term` -> `cortexterm`.
 pub fn repo_id(name: &str) -> String {
     name.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect()
-}
-
-/// Prefixes a name suggests, best first: its capitals (`CortexTerm` -> `CT`), then its first letters.
-pub fn prefix_candidates(name: &str) -> Vec<String> {
-    let letters: String = name.chars().filter(char::is_ascii_alphabetic).collect();
-    let capitals: String = letters.chars().filter(char::is_ascii_uppercase).take(3).collect();
-    let upper = letters.to_ascii_uppercase();
-    let mut out = Vec::new();
-    if capitals.len() >= 2 {
-        out.push(capitals.clone());
-        if capitals.len() == 3 {
-            out.push(capitals[..2].to_owned());
-        }
-    }
-    for length in [2, 3] {
-        if upper.len() >= length {
-            out.push(upper[..length].to_owned());
-        }
-    }
-    out.dedup();
-    out
 }
 
 /// A title from a text: its first line, cut at a word.

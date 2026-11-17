@@ -28,7 +28,7 @@ import './manage.css';
 import './card.css';
 
 /** The gates a package always passes; a person's yes is shown only when one was asked for. */
-const ALWAYS = ['scope', 'standard', 'charter', 'build', 'walks', 'converge'];
+const ALWAYS = ['scope', 'charter', 'build', 'walks', 'converge'];
 
 function Ladder({ request, pack, now }: { request: RequestView; pack: PackageView | undefined; now: number }) {
   const reached = new Map<string, number>();
@@ -80,7 +80,7 @@ function Card({ active }: { active?: boolean }) {
   if (selection.view !== 'session' || !selection.request) {
     return <div className="cm-pane" data-build={__CORTEX_BUILD__}><p className="cm-line flush">Open a request in the sidebar to see its card.</p></div>;
   }
-  const gates = latestGates(pack.data?.gates ?? []);
+  const gates = latestGates(pack.data?.gates ?? []).filter((gate) => gate.kind !== 'standard');
   const kinds = [...ALWAYS, ...gates.map((gate) => gate.kind).filter((kind) => !ALWAYS.includes(kind))];
   return (
     <div className="cm-pane" data-build={__CORTEX_BUILD__} data-request={selection.request}>

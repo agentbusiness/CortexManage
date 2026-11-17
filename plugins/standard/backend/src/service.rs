@@ -608,7 +608,7 @@ fn round_trip(folder: &Path, skip: Skip) -> Result<String, String> {
         }
         std::fs::write(&path, text).map_err(|error| format!("cannot write {}: {error}", path.display()))
     };
-    let parts = Parts { skip, own: crate::parts::Own { priority_after: vec!["PRIORITY: u32 = ".into()] }, parts: vec![Part { id: "kit".into(), files: vec!["**".into()] }] };
+    let parts = Parts { skip, parts: vec![Part { id: "kit".into(), files: vec!["**".into()] }] };
     let member = |id: &str, name: &str, priority: u32| Member {
         id: id.to_owned(),
         name: name.to_owned(),
@@ -619,18 +619,17 @@ fn round_trip(folder: &Path, skip: Skip) -> Result<String, String> {
         ..Member::default()
     };
     let (first, second) = (member("probeone", "ProbeOne", 7), member("probetwo", "ProbeTwo", 3));
-    // Two files each: one that carries the member's own name and priority, one that is the same bytes.
+    // Two files each, the same bytes in both copies.
     for member in [&first, &second] {
         let kit = Path::new(&member.root).join("kit");
-        write(kit.join("lib.rs"), &format!("//! {} keeps this.\npub const SOFTWARE: &str = \"{}\";\npub const PRIORITY: u32 = {};\n", member.name, member.id, member.priority))?;
+        write(kit.join("lib.rs"), "//! The kit keeps this.\npub const VERSION: u32 = 1;\n")?;
         write(kit.join("src").join("wire.rs"), "pub const ALPN: &[u8] = b\"probe/1\";\n")?;
         // Build output is never a standard file.
         write(kit.join("target").join("built.txt"), &member.id)?;
     }
     let files = lock::files_of(&first, &parts)?;
-    let named: Vec<&str> = files.iter().filter(|file| file.names).map(|file| file.path.as_str()).collect();
-    if files.len() != 2 || named != ["lib.rs"] {
-        return Err(format!("expected 2 files with lib.rs hashed without the names; got {} files, names in {named:?}", files.len()));
+    if files.len() != 2 {
+        return Err(format!("expected 2 files in the lock; got {}", files.len()));
     }
     let written = Lock { version: lock::next_version(""), from: first.id.clone(), files, written_ms: now_ms() };
     let members = [first.clone(), second.clone()];
@@ -641,8 +640,8 @@ fn round_trip(folder: &Path, skip: Skip) -> Result<String, String> {
     }
     let states = |report: &Report| report.cells.iter().map(|cell| cell.state.clone()).collect::<Vec<_>>();
     let same = lock::check(&members, &written, &parts, now_ms());
-    if states(&same) != ["names", "names"] || !same.drift.is_empty() {
-        return Err(format!("two copies that differ only by name should read `names`; got {:?}", states(&same)));
+    if states(&same) != ["same", "same"] || !same.drift.is_empty() {
+        return Err(format!("two copies with the same bytes should read `same`; got {:?}", states(&same)));
     }
     write(Path::new(&second.root).join("kit").join("src").join("wire.rs"), "pub const ALPN: &[u8] = b\"probe/2\";\n")?;
     let changed = lock::check(&members, &written, &parts, now_ms());

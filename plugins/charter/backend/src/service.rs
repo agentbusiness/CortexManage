@@ -386,7 +386,7 @@ impl Charters {
                         repo: repo.into(),
                         id: "V1".into(),
                         kept_by: Some(kept_by::CHECK.into()),
-                        check: Some(checks::NO_NATIVE_CONTROLS.into()),
+                        check: Some(checks::AGENTS_FILE_UNTOUCHED.into()),
                         applies_to: Some(vec!["plugins/*/ui/**".into()]),
                         ..RulePut::default()
                     },
@@ -451,14 +451,14 @@ impl Charters {
         let paths_ok = for_ui.iter().any(|rule| rule.id == "V1") && !for_backend.iter().any(|rule| rule.id == "V1");
         step("a rule goes only to the paths it names", if paths_ok { Ok(format!("{} rules for the UI file, {} for the backend file", for_ui.len(), for_backend.len())) } else { Err("V1 went to the wrong paths".into()) });
 
-        let diff = "diff --git a/plugins/x/ui/page/src/index.tsx b/plugins/x/ui/page/src/index.tsx\n--- a/plugins/x/ui/page/src/index.tsx\n+++ b/plugins/x/ui/page/src/index.tsx\n@@ -1,2 +1,3 @@\n import React from 'react';\n+const pick = <select value={level} />;\n export {};\n";
+        let diff = "diff --git a/AGENTS.md b/AGENTS.md\n--- a/AGENTS.md\n+++ b/AGENTS.md\n@@ -1,2 +1,3 @@\n # Notes\n+- A line somebody added.\n - Keep it simple.\n";
         let checked = self.data.checks().and_then(|data| {
             let answer = checks::run(&CheckParams { repo: repo.into(), diff: diff.into(), ..CheckParams::default() }, &shelf.rules_in_force(repo), &data);
-            let found = answer.findings.len() == 1 && answer.findings[0].check == checks::NO_NATIVE_CONTROLS && answer.findings[0].line == 2 && answer.findings[0].rule == "V1";
+            let found = answer.findings.len() == 1 && answer.findings[0].check == checks::AGENTS_FILE_UNTOUCHED && answer.findings[0].rule == "V1";
             // Only the check a rule asks for runs, and the one for secrets.
-            if !answer.ok && found && answer.ran == [checks::NO_NATIVE_CONTROLS, checks::NO_SECRETS] { Ok(answer.findings[0].text.clone()) } else { Err(format!("ran {:?}, found {:?}", answer.ran, answer.findings)) }
+            if !answer.ok && found && answer.ran == [checks::NO_SECRETS, checks::AGENTS_FILE_UNTOUCHED] { Ok(answer.findings[0].text.clone()) } else { Err(format!("ran {:?}, found {:?}", answer.ran, answer.findings)) }
         });
-        step("the checks find a native control in a small diff", checked);
+        step("the checks find an edit of the printed file in a small diff", checked);
 
         ProbeReport::from_checks(checks)
     }

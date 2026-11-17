@@ -328,7 +328,7 @@ export const TIER_LABEL: Record<Tier, string> = { safe: 'Safe', minor: 'Minor', 
 
 // ─── the selection ──────────────────────────────────────────────────────────
 
-export type View = 'session' | 'new' | 'inbox' | 'charter' | 'releases' | 'runner' | 'standard';
+export type View = 'session' | 'new' | 'inbox' | 'charter' | 'releases' | 'runner';
 
 /** What is open, for every package of the window (shared key `manage.selection`). */
 export interface Selection {

@@ -21,13 +21,6 @@ pub struct Skip {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
-pub struct Own {
-    /// The texts a member's priority directly follows where it is the member's own value.
-    #[serde(default)]
-    pub priority_after: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Part {
     pub id: String,
     /// Paths relative to the member's folder for the part, with `*`, `?` and `**`.
@@ -39,8 +32,6 @@ pub struct Part {
 pub struct Parts {
     #[serde(default)]
     pub skip: Skip,
-    #[serde(default)]
-    pub own: Own,
     #[serde(default, rename = "part")]
     pub parts: Vec<Part>,
 }

@@ -63,49 +63,6 @@ pub struct CheckText {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct Records {
-    pub endings: Vec<String>,
-    pub folders: Vec<String>,
-    #[serde(default)]
-    pub allowed_names: Vec<String>,
-    #[serde(default)]
-    pub allowed_starts: Vec<String>,
-    #[serde(default)]
-    pub allowed_ends: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct Tests {
-    pub line_endings: Vec<String>,
-    pub line_starts: Vec<String>,
-    pub folders: Vec<String>,
-    pub name_parts: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct Mark {
-    /// An element's name: matched as `<name` at the start of a tag.
-    #[serde(default)]
-    pub tag: String,
-    /// Or an exact text.
-    #[serde(default)]
-    pub text: String,
-    pub what: String,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct Controls {
-    pub endings: Vec<String>,
-    #[serde(default)]
-    pub mark: Vec<Mark>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct Theme {
-    pub folder: String,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
 pub struct PrintedFiles {
     pub names: Vec<String>,
 }
@@ -131,10 +88,6 @@ pub struct Secrets {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Checks {
     pub check: Vec<CheckText>,
-    pub records: Records,
-    pub tests: Tests,
-    pub controls: Controls,
-    pub theme: Theme,
     pub printed: PrintedFiles,
     pub secrets: Secrets,
 }

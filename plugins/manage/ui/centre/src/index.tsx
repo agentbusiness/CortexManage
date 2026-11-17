@@ -1,7 +1,7 @@
 /**
  * workbench.chat@1 — the centre column. The one selection says what is open: a request's session
  * (hosted: `manage.session@1`), a repository's pages (Charter and Releases hosted, Runner its
- * own), the mesh standard (hosted), or Waits on you (its own). A hosted page with no package
+ * own), or Waits on you (its own). A hosted page with no package
  * installed is one plain line saying which part is missing.
  */
 
@@ -129,9 +129,6 @@ function Centre() {
           {selection.repo && selection.view === 'runner' && <RunnerPage repoId={selection.repo} repo={repo} />}
         </>
       );
-      break;
-    case 'standard':
-      body = <Hosted slot="page.standard@1" missing="The Mesh standard page is missing: the standard part is not installed." />;
       break;
     default:
       body = <InboxPage repos={repos.data ?? []} open={setSelection} />;
