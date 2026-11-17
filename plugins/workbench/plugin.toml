@@ -24,6 +24,11 @@ id = "workbench.band-connection"
 slot = "workbench.band@1"
 
 [[ui.package]]
+dir = "ui/band-controls"
+id = "workbench.band-controls"
+slot = "workbench.band@1"
+
+[[ui.package]]
 dir = "ui/right-pane"
 id = "workbench.right-pane"
 slot = "workbench.rightPane@1"

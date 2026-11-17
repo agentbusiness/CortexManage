@@ -157,10 +157,8 @@ proof_walks_blocked = "Walks: {passed} passed, {failed} failed, {blocked} could 
 proof_converge = "The diff does the plan and nothing else."
 
 # ---- the inbox ---------------------------------------------------------------------------------------------
-count_need = "{count} need you"
 count_building = "{count} building"
 count_held = "{count} held"
-count_none = "Nothing waits on you"
 going_builds = "builds {time}"
 going_urgent_building = "urgent · building"
 going_urgent_held = "urgent · starts now"

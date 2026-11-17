@@ -886,7 +886,7 @@ impl Manager {
 
         let started = std::time::Instant::now();
         let steer = self.t("steer_w4", &[("file", "a/b.rs"), ("next", "Probe")]);
-        let texts_ok = steer.contains("a/b.rs") && steer.contains("Probe") && !self.t("count_none", &[]).is_empty();
+        let texts_ok = steer.contains("a/b.rs") && steer.contains("Probe") && !self.t("count_held", &[("count", "1")]).is_empty();
         check("texts", texts_ok, "the steer sentences fill in their facts".into(), started);
 
         let started = std::time::Instant::now();

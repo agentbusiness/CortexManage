@@ -9,6 +9,7 @@
   },
   "workspaces": [
     "band-connection",
+    "band-controls",
     "right-pane",
     "settings-appearance",
     "window"

@@ -261,12 +261,14 @@ pub fn list(manager: &Manager) -> Inbox {
         }
         going.sort_by_key(|item| (!item.urgent, item.hold_until_ms));
         let mut parts: Vec<String> = Vec::new();
-        for (count, key) in [(asks.len(), "count_need"), (building, "count_building"), (held, "count_held")] {
+        // What is in motion besides the asks: the band's button already counts those, and with
+        // nothing in motion the line is empty.
+        for (count, key) in [(building, "count_building"), (held, "count_held")] {
             if count > 0 {
                 parts.push(manager.t(key, &[("count", &count.to_string())]));
             }
         }
-        let count_line = if parts.is_empty() { manager.t("count_none", &[]) } else { parts.join(" · ") };
+        let count_line = parts.join(" · ");
         Inbox { asks, going, count_line }
     })
 }

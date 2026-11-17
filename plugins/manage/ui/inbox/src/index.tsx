@@ -1,6 +1,6 @@
 /**
  * workbench.band@1 — Waits on you: how many decisions are wanted from the person (the button is
- * pressed while there is one), and beside it the count line of everything in motion. Pressing it
+ * pressed while there is one), and beside it what is building or held, when anything is. Pressing it
  * opens the inbox in the centre.
  */
 
