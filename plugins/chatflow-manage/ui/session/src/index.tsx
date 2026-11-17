@@ -124,9 +124,9 @@ function Session() {
   const block = (entry: JournalEntry) => {
     switch (entry.kind) {
       case kinds.USER_MESSAGE: return <Message key={entry.seq} entry={entry} who="You" />;
-      // The manager's answers to the person. Its status lines (assessed, planned, validated, held)
-      // repeat what the head's tags and the blocks already show, so they are not drawn.
-      case kinds.ASSISTANT_MESSAGE: return typeof entry.data.run_id === 'string' ? <Message key={entry.seq} entry={entry} who="Manager" tone="live" /> : null;
+      // The manager's answers to the person. A line it marked as status (`status: true`: assessed,
+      // planned, validated, held) repeats what the head's tags and the blocks show, and is not drawn.
+      case kinds.ASSISTANT_MESSAGE: return entry.data.status === true ? null : <Message key={entry.seq} entry={entry} who="Manager" tone="live" />;
       case 'digest': return <Message key={entry.seq} entry={entry} who="Manager · digest" tone="live" />;
       // The assessment is the tags in the head (tier, kind, what it reaches).
       case 'assessment': return null;

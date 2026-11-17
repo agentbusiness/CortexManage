@@ -1,9 +1,10 @@
 /**
- * Add a repository, a sheet: picked from the person's own GitHub repositories (vcs.github.repos,
- * filtered by what is typed), typed as owner/name or as any git address, or made new on GitHub
- * (vcs.github.repo.create). Nothing else is asked: the name comes from the repository, the branch
- * is its default branch, and it builds on the CortexCode that is reachable. All of it can be
- * changed later in Settings.
+ * Add a repository, a sheet with three ways, each chosen by the person:
+ * from their own GitHub repositories (vcs.github.repos; what is typed only filters the list, and
+ * the one pressed is the one added, with the address and branch GitHub gives for it), new on GitHub
+ * (vcs.github.repo.create, by the name typed), or any git address with a name typed beside it.
+ * Nothing is worked out from the shape of what is typed. It builds on the CortexCode that is
+ * reachable; all of it can be changed later in Settings.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -15,18 +16,7 @@ interface GithubStatus { connected: boolean; login?: string | null }
 interface GithubRepo { full_name: string; private: boolean; description: string; fork: boolean; clone_url: string; default_branch: string }
 interface Peer { member: { node: string; name: string }; card?: { software?: string } | null; reachable: boolean }
 
-/** The name a repository's address suggests: its last part, without `.git`. */
-function nameOf(repo: string): string {
-  const last = repo.trim().replace(/\/+$/, '').split(/[/:]/).pop() ?? '';
-  return last.replace(/\.git$/, '');
-}
-
-/** The git address of what was typed: an address as it is, `owner/name` on GitHub. */
-function addressOf(typed: string): string {
-  const text = typed.trim();
-  if (/^[\w.-]+\/[\w.-]+$/.test(text)) return `https://github.com/${text.replace(/\.git$/, '')}.git`;
-  return text;
-}
+type Way = 'github' | 'new' | 'address';
 
 export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (next: Selection) => void }) {
   const client = useClient();
@@ -37,7 +27,11 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
     async (c) => (await c.call<{ repos: GithubRepo[] }>('vcs.github.repos', {}))?.repos ?? []);
   // Only a computer running CortexCode can build: its card says which app it is.
   const runners = useQuery<Peer[]>('mesh.peers:runners', async (c) => ((await c.call<{ peers: Peer[] }>('mesh.peers', {}))?.peers ?? []).filter((peer) => peer.card?.software === 'cortexcode'), { topics: ['mesh.changed'] });
-  const [repo, setRepo] = useState('');
+  const [way, setWay] = useState<Way>('github');
+  const [filter, setFilter] = useState('');
+  const [picked, setPicked] = useState<GithubRepo | null>(null);
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDivElement>(null);
@@ -60,17 +54,13 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
     };
   }, []);
 
-  const typed = repo.trim();
-  const listed = (repos.data ?? []).filter((r) => !typed || r.full_name.toLowerCase().includes(typed.toLowerCase()));
-  const picked = (repos.data ?? []).find((r) => r.full_name === typed) ?? null;
-  // A bare name that is none of the person's repositories: it can be made new on GitHub.
-  const fresh = connected && /^[\w.-]+$/.test(typed) && !(repos.data ?? []).some((r) => nameOf(r.full_name).toLowerCase() === typed.toLowerCase());
-  const name = nameOf(typed);
+  const wanted = filter.trim().toLowerCase();
+  const listed = (repos.data ?? []).filter((r) => wanted === '' || r.full_name.toLowerCase().includes(wanted));
 
-  const add = async (source: { url: string; main: string }) => {
+  const add = async (source: { name: string; url: string; main: string }) => {
     const runner = (runners.data ?? []).find((peer) => peer.reachable) ?? null;
     const created = await client.call<Repo>('manage.repo.create', {
-      name,
+      name: source.name,
       prefix: '',
       source: { kind: 'git', url: source.url, main: source.main, changes: 'none' },
       runner: runner?.member.node ?? '',
@@ -91,62 +81,96 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
       setBusy(null);
     }
   };
-  const addTyped = () => run('Adding', () => add(picked ? { url: picked.clone_url, main: picked.default_branch || 'main' } : { url: addressOf(typed), main: 'main' }));
-  const makeNew = () => run('Making it on GitHub', async () => {
-    const made = await client.call<GithubRepo>('vcs.github.repo.create', { name: typed, private: true });
-    await add({ url: made.clone_url, main: made.default_branch || 'main' });
-  });
+  // `full_name` is `owner/name` by GitHub's own definition: the repository's name is its second part.
+  const ownName = (r: GithubRepo) => r.full_name.split('/')[1] ?? r.full_name;
+  const ready = way === 'github' ? picked !== null : way === 'new' ? name.trim() !== '' : name.trim() !== '' && address.trim() !== '';
+  const submit = () => {
+    if (!ready) return;
+    if (way === 'github' && picked) void run('Adding', () => add({ name: ownName(picked), url: picked.clone_url, main: picked.default_branch || 'main' }));
+    if (way === 'new') {
+      void run('Making it on GitHub', async () => {
+        const made = await client.call<GithubRepo>('vcs.github.repo.create', { name: name.trim(), private: true });
+        await add({ name: name.trim(), url: made.clone_url, main: made.default_branch || 'main' });
+      });
+    }
+    if (way === 'address') void run('Adding', () => add({ name: name.trim(), url: address.trim(), main: 'main' }));
+  };
+  const connect = (
+    <p className="hint" data-github="not-connected">
+      GitHub is not connected. Connect it in{' '}
+      <button type="button" className="cx-file-link" onClick={() => { onClose(); setShared('settings.open', 'github'); }}>Settings &gt; GitHub</button>
+      , or add the repository by its git address.
+    </p>
+  );
 
   const root = document.getElementById('cc') ?? document.body;
   return createPortal(
     <div className="sheet-scrim open" data-slot={owner.slot} data-plugin-id={owner.pluginId} data-portal="add-repo">
       <div ref={dialog} className="sheet cx-np" role="dialog" aria-modal="true" aria-label="Add a repository">
-        <form onSubmit={(event) => { event.preventDefault(); if (fresh) void makeNew(); else void addTyped(); }}>
+        <form onSubmit={(event) => { event.preventDefault(); submit(); }}>
           <div className="sheet-h">
             <span className="ap">Add a repository</span>
             <span className="grow" />
             <button className="detent" type="button" onClick={onClose}>Close</button>
           </div>
           <div className="sheet-b">
-            <label className="fld">
-              <span className="ap faint">Repository</span>
-              <input type="text" value={repo} placeholder={connected ? 'Search yours, or type owner/name, a git address, or a new name' : 'owner/name or a git address'} spellCheck={false} autoComplete="off" data-field="repo"
-                onChange={(event) => setRepo(event.target.value)} />
-            </label>
-            {connected ? (
-              repos.data ? (
-                listed.length ? (
-                  <ul className="cx-np-repos" role="listbox" aria-label="Your repositories">
-                    {listed.map((r) => (
-                      <li key={r.full_name}>
-                        <button type="button" role="option" aria-selected={r.full_name === typed} data-repo={r.full_name} onClick={() => setRepo(r.full_name)}>
-                          <span className="t">{r.full_name}</span>
-                          {r.private && <span className="ap faint">private</span>}
-                          {r.fork && <span className="ap faint">fork</span>}
-                          {r.description && <span className="d">{r.description}</span>}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p className="hint">{fresh ? `None of your repositories is called ${typed}. Make it new on GitHub, as a private repository.` : 'None of your repositories match; Add takes what is typed.'}</p>
-              ) : repos.error ? <p className="inline-error">GitHub did not list your repositories: {repos.error}</p>
-                : <p className="hint">Reading your repositories…</p>
-            ) : status.data ? (
-              <p className="hint" data-github="not-connected">
-                GitHub is not connected, so your repositories are not listed. Connect it in{' '}
-                <button type="button" className="cx-file-link" onClick={() => { onClose(); setShared('settings.open', 'github'); }}>Settings &gt; GitHub</button>.
-                A repository can still be typed as owner/name or as a git address.
-              </p>
-            ) : status.error ? (
-              <p className="hint">The GitHub connection is not available ({status.error}). A repository can be typed as owner/name or as a git address.</p>
-            ) : null}
+            <div className="fld">
+              <span className="seg-set" role="group" aria-label="Which repository">
+                <button type="button" aria-pressed={way === 'github'} onClick={() => setWay('github')}>From GitHub</button>
+                <button type="button" aria-pressed={way === 'new'} onClick={() => setWay('new')}>New on GitHub</button>
+                <button type="button" aria-pressed={way === 'address'} onClick={() => setWay('address')}>Git address</button>
+              </span>
+            </div>
+            {way === 'github' && (connected ? (
+              <>
+                <label className="fld">
+                  <span className="ap faint">Your repositories</span>
+                  <input type="text" value={filter} placeholder="Type to filter" spellCheck={false} autoComplete="off" data-field="filter" onChange={(event) => setFilter(event.target.value)} />
+                </label>
+                {repos.data ? (
+                  listed.length ? (
+                    <ul className="cx-np-repos" role="listbox" aria-label="Your repositories">
+                      {listed.map((r) => (
+                        <li key={r.full_name}>
+                          <button type="button" role="option" aria-selected={picked?.full_name === r.full_name} data-repo={r.full_name} onClick={() => setPicked(r)}>
+                            <span className="t">{r.full_name}</span>
+                            {r.private && <span className="ap faint">private</span>}
+                            {r.fork && <span className="ap faint">fork</span>}
+                            {r.description && <span className="d">{r.description}</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="hint">None of your repositories has that in its name.</p>
+                ) : repos.error ? <p className="inline-error">GitHub did not list your repositories: {repos.error}</p>
+                  : <p className="hint">Reading your repositories…</p>}
+              </>
+            ) : status.data ? connect : status.error ? <p className="hint">The GitHub connection is not available ({status.error}). Add the repository by its git address.</p> : null)}
+            {way === 'new' && (connected ? (
+              <label className="fld">
+                <span className="ap faint">Name of the new repository</span>
+                <input type="text" value={name} placeholder="Name" spellCheck={false} autoComplete="off" data-field="name" onChange={(event) => setName(event.target.value)} />
+              </label>
+            ) : status.data ? connect : null)}
+            {way === 'address' && (
+              <>
+                <label className="fld">
+                  <span className="ap faint">Git address</span>
+                  <input type="text" value={address} placeholder="https://… or git@…" spellCheck={false} autoComplete="off" data-field="address" onChange={(event) => setAddress(event.target.value)} />
+                </label>
+                <label className="fld">
+                  <span className="ap faint">Name</span>
+                  <input type="text" value={name} placeholder="What to call it here" spellCheck={false} autoComplete="off" data-field="name" onChange={(event) => setName(event.target.value)} />
+                </label>
+              </>
+            )}
             {error && <p className="inline-error" role="alert">{error}</p>}
           </div>
           <div className="sheet-f">
             <span className="grow" />
             <button className="detent" type="button" onClick={onClose}>Cancel</button>
-            <button className="detent" type="submit" data-action="add-repo" disabled={!name || busy !== null}>
-              {busy ? `${busy}…` : fresh ? `Make ${typed} on GitHub and add it` : 'Add'}
+            <button className="detent" type="submit" data-action="add-repo" disabled={!ready || busy !== null}>
+              {busy ? `${busy}…` : way === 'new' ? 'Make it and add it' : 'Add'}
             </button>
           </div>
         </form>

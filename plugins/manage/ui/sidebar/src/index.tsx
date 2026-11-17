@@ -2,12 +2,12 @@
  * workbench.sidebar@1 — at the top New request (it opens the conversation in the centre) and Add
  * repo (a sheet: from GitHub, or any git address). Then the
  * repositories, and under each its open requests: a package of several requests is a bracket
- * around them. Below, under its own heading, the shared standard, only when the person's
- * repositories carry one.
+ * around them. Below, under its own heading, the shared standard, only when a managed
+ * repository declares it (a `standard.lock` at its root).
  * Pressing a repository's name opens its page; pressing a request opens its session.
  */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Cross, definePlugin, useNow, useQuery, type Client } from '@cortex/sdk';
 import {
   CHANGED,
@@ -165,15 +165,40 @@ function StandardRow({ selection, open }: { selection: Selection; open: (next: S
   );
 }
 
-/** The shared standard, only for a person whose repositories carry one: with no member of a
- * standard there is nothing to show, and nothing is shown. */
-function SharedStandard({ selection, open }: { selection: Selection; open: (next: Selection) => void }) {
-  const members = useQuery<unknown[]>('standard.member.list', async (client) => (await client.call<{ members: unknown[] }>('standard.member.list', {}))?.members ?? [], { topics: ['standard.changed'] });
-  if (!members.data || members.data.length === 0) return null;
+/** Whether a repository declares the shared standard: it carries `standard.lock` at its root, read
+ * from the repository itself. Not declared, or not readable: it does not carry one. */
+function useDeclaresStandard(repo: Repo): boolean {
+  const lock = useQuery<string>(repo.managed ? `standard.lock:${repo.id}` : null, async (client) => {
+    try {
+      return (await client.call<{ text?: string }>('manage.discover.read', { repo: repo.id, path: 'standard.lock', lines: 1 }))?.text ?? '';
+    } catch {
+      return '';
+    }
+  });
+  return (lock.data ?? '') !== '';
+}
+
+function Declares({ repo, onFound }: { repo: Repo; onFound: (id: string, declared: boolean) => void }) {
+  const declared = useDeclaresStandard(repo);
+  useEffect(() => onFound(repo.id, declared), [repo.id, declared, onFound]);
+  return null;
+}
+
+/** The shared standard, only when a managed repository declares one. Nothing is listed or named
+ * here by the app itself. */
+function SharedStandard({ repos, selection, open }: { repos: Repo[]; selection: Selection; open: (next: Selection) => void }) {
+  const [declared, setDeclared] = useState<Record<string, boolean>>({});
+  const onFound = useCallback((id: string, found: boolean) => setDeclared((now) => (now[id] === found ? now : { ...now, [id]: found })), []);
+  const any = repos.some((repo) => declared[repo.id] === true);
   return (
     <>
-      <div className="index-h cm-side-shared"><Cross /><span className="ap">Shared by every app</span></div>
-      <StandardRow selection={selection} open={open} />
+      {repos.map((repo) => <Declares key={repo.id} repo={repo} onFound={onFound} />)}
+      {any && (
+        <>
+          <div className="index-h cm-side-shared"><Cross /><span className="ap">Shared by every app</span></div>
+          <StandardRow selection={selection} open={open} />
+        </>
+      )}
     </>
   );
 }
@@ -203,7 +228,7 @@ function Sidebar() {
         {repos.error && !repos.data && <p className="inline-error">{loadFailure('The repositories', repos)}</p>}
         {repos.data && list.length === 0 && <p className="cm-line flush">No repository yet. Add one with Add repo.</p>}
         {list.map((repo, index) => <RepoBlock key={repo.id} repo={repo} index={index} selection={selection} open={setSelection} now={now} />)}
-        <SharedStandard selection={selection} open={setSelection} />
+        <SharedStandard repos={list} selection={selection} open={setSelection} />
       </div>
     </div>
   );

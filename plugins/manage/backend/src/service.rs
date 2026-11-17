@@ -175,7 +175,8 @@ impl Manager {
     /// One of the manager's short lines in a thread.
     pub async fn line(&self, session: &str, text: &str) {
         if !text.is_empty() {
-            self.entry(session, fc::kinds::ASSISTANT_MESSAGE, json!({"text": text, "streaming": false})).await;
+            // `status`: a line about what the manager did, not an answer to the person.
+            self.entry(session, fc::kinds::ASSISTANT_MESSAGE, json!({"text": text, "streaming": false, "status": true})).await;
         }
     }
 

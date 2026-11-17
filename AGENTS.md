@@ -1,8 +1,9 @@
 # CortexManage: notes for anyone working on this repository
 
-CortexManage manages the development of the Cortex apps. A request is a chat session under its
-repository; the app rates it, plans it, holds it, and drives a running CortexCode (the runner) to
-build it, watching every step. It is a Rust frame that runs everything as plugins and an Electron
+CortexManage manages the development of software, new or existing: any repository a person adds.
+People use it for their own repositories; the Cortex apps are only the first it manages. A request
+is a chat session under its repository; the app rates it, plans it, holds it, and drives a running
+CortexCode (the runner) to build it, watching every step. It is a Rust frame that runs everything as plugins and an Electron
 UI, like its siblings. Design: `docs/specs/README.md`. The window: `docs/brief/cortexmanage-brief.html`.
 
 This file is written by hand until the charter plugin prints it (`docs/specs/03-CHARTER.md`).
@@ -27,6 +28,13 @@ This file is written by hand until the charter plugin prints it (`docs/specs/03-
 7. **Secrets live in the Keychain or the Secret Service**, never in a file or the graph. A model
    never holds a key.
 8. **Local only.** No cloud, no telemetry; a model runs only on a GPU of the mesh.
+9. **Nothing is recognised by guessing.** No name matching, no heuristics, no regular expressions
+   and no patterns decide what a thing is or what it belongs to. A thing is what it declares in a
+   fixed place (a field, a file at a fixed path), or what a person set. What is not declared is not
+   there: it is not inferred and not shown.
+10. **Nothing of one owner is built in.** No repository, app name, path, member list or rule of any
+    one person's software is in the code or shown by default. Such a thing appears only when a
+    managed repository declares it.
 
 ## Constraints
 
@@ -51,13 +59,16 @@ This file is written by hand until the charter plugin prints it (`docs/specs/03-
 
 - Keep it simple: where two mechanisms could do a job, there is one. Reuse what the Cortex apps
   already have before adding anything.
-- Code decides what code can decide: risk floors, scope, hashes and the watch are counting. No
-  keyword or pattern guessing of what a text means; meaning is a model question in the chat flow.
+- Code decides what code can decide: risk floors, scope, hashes and the watch are counting. Meaning
+  is a model question in the chat flow, never a keyword or a pattern (law 9).
 - Model-facing text follows CortexCode's lens: short numbered steps, one reason per choice, a
   neutral example, the evidence right before the decision, the last sentence is the next step,
   never prose and a decision in one answer. Decisions are schema-bound and greedy.
 - Prompts, schemas and texts are data in a plugin's `data` folder, edited live; code carries none.
-- Texts a person reads are plain English. An error says what went wrong and what to do.
+- Texts a person reads are plain English, and few: a screen shows what a person needs to act, not
+  what the app did. An error says what went wrong and what to do.
+- Simple first: a person adds a repository and writes what should change. Everything else has a
+  default and stays out of the way.
 - No locks held across an await; no sleeps as waits.
 - The contracts are `protocol/src/contracts/{manage,charter,standard,train,runner}.rs`. A contract
   changes additively.

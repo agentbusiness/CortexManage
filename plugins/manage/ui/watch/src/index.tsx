@@ -117,7 +117,7 @@ function Watch({ active }: { active?: boolean }) {
               <div key={`${step.ms}:${index}`} className="cm-step" data-rule={step.rule}>
                 <div className="cm-step-h">
                   <span className={`ap ${step.action === 'note' ? 'faint' : 'live'}`}>
-                    {timeOf(step.ms, now)} · {ACTION_LABEL[step.action] ?? step.action} · {/^W\d$/.test(step.rule) ? `rule ${step.rule}` : step.rule}
+                    {timeOf(step.ms, now)} · {ACTION_LABEL[step.action] ?? step.action} · {RULE_TEXT[step.rule] ?? step.rule}
                   </span>
                   {step.task > 0 && <span className="ap faint">task {step.task}</span>}
                 </div>
