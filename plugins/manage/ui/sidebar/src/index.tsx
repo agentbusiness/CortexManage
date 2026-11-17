@@ -1,8 +1,8 @@
 /**
- * workbench.sidebar@1 — the repositories, and under each its open requests: a package of several
- * requests is a bracket around them. Below the repositories, the mesh standard. Pressing a
- * repository's name opens its page; pressing a request opens its session. At the foot: New
- * request and Add repo, each a small form in place.
+ * workbench.sidebar@1 — at the top New request and Add repo, each a small form in place. Then the
+ * repositories, and under each its open requests: a package of several requests is a bracket
+ * around them. Below, under its own heading, the code the Cortex apps share (the mesh standard).
+ * Pressing a repository's name opens its page; pressing a request opens its session.
  */
 
 import { useState } from 'react';
@@ -108,7 +108,7 @@ function RepoBlock({ repo, index, selection, open, now }: { repo: Repo; index: n
   const open_ = requests.data ?? [];
   const on = selection.repo === repo.id && selection.view !== 'inbox' && selection.view !== 'standard';
   const sub = repo.managed
-    ? `builds on ${repo.runner_name || 'this computer'}${requests.data ? ` · ${open_.length} open` : ''}`
+    ? `builds on ${repo.runner_name || 'this computer'}${requests.data ? ` · ${open_.length === 0 ? 'no open request' : count(open_.length, 'open request')}` : ''}`
     : 'not managed yet';
   return (
     <section className={`cm-repo${repo.managed ? '' : ' off'}`} data-repo={repo.id}>
@@ -143,8 +143,8 @@ function StandardRow({ selection, open }: { selection: Selection; open: (next: S
   const drift = report.data?.drift?.length ?? 0;
   let sub: string;
   if (report.data) {
-    const version = report.data.version ? `v${report.data.version}` : 'no lock yet';
-    sub = `${version} · ${drift === 0 ? 'every app in step' : `${count(drift, 'app')} ${drift === 1 ? 'drifts' : 'drift'}`}`;
+    const version = report.data.version ? `version ${report.data.version}` : 'not locked yet';
+    sub = `${version} · ${drift === 0 ? 'the same in every app' : `${count(drift, 'app')} ${drift === 1 ? 'differs' : 'differ'}`}`;
   } else if (report.error) {
     sub = report.errorCode === 'unavailable' ? 'the standard part is not running' : `not known: ${report.error}`;
   } else {
@@ -153,7 +153,7 @@ function StandardRow({ selection, open }: { selection: Selection; open: (next: S
   return (
     <ul className="nav">
       <li className={selection.view === 'standard' ? 'on' : undefined}>
-        <button type="button" onClick={() => open({ view: 'standard', repo: null, request: null, package: null })}>
+        <button type="button" title="The files every Cortex app must carry unchanged, and which app's copy differs" onClick={() => open({ view: 'standard', repo: null, request: null, package: null })}>
           <span className={`kk${drift > 0 ? ' drift' : ''}`}>{drift > 0 ? '≠' : '='}</span>
           <span className="nm">Mesh standard</span>
           <span className="sub">{sub}</span>
@@ -294,18 +294,19 @@ function Sidebar() {
   };
   return (
     <div className="cm-side" data-build={__CORTEX_BUILD__}>
-      <div className="index-h"><Cross /><span className="ap">Repositories</span></div>
-      <div className="cm-side-scroll">
-        {repos.error && !repos.data && <p className="inline-error">{loadFailure('The repositories', repos)}</p>}
-        {repos.data && list.length === 0 && <p className="cm-line flush">No repository yet. Add one below.</p>}
-        {list.map((repo, index) => <RepoBlock key={repo.id} repo={repo} index={index} selection={selection} open={setSelection} now={now} />)}
-        <StandardRow selection={selection} open={setSelection} />
+      <div className="cm-side-acts">
+        <button type="button" className="detent" aria-pressed={form === 'request'} title="Describe a change to one repository; it becomes a session under that repository" onClick={() => setForm(form === 'request' ? null : 'request')}>New request</button>
+        <button type="button" className="detent" aria-pressed={form === 'repo'} title="Add a git repository for CortexManage to manage" onClick={() => setForm(form === 'repo' ? null : 'repo')}>Add repo</button>
       </div>
       {form === 'request' && <NewRequest repos={list} selection={selection} done={done} />}
       {form === 'repo' && <AddRepo done={done} />}
-      <div className="cm-side-foot">
-        <button type="button" className="detent" aria-pressed={form === 'request'} onClick={() => setForm(form === 'request' ? null : 'request')}>New request</button>
-        <button type="button" className="detent" aria-pressed={form === 'repo'} onClick={() => setForm(form === 'repo' ? null : 'repo')}>Add repo</button>
+      <div className="index-h"><Cross /><span className="ap">Repositories</span></div>
+      <div className="cm-side-scroll">
+        {repos.error && !repos.data && <p className="inline-error">{loadFailure('The repositories', repos)}</p>}
+        {repos.data && list.length === 0 && <p className="cm-line flush">No repository yet. Add one with Add repo.</p>}
+        {list.map((repo, index) => <RepoBlock key={repo.id} repo={repo} index={index} selection={selection} open={setSelection} now={now} />)}
+        <div className="index-h cm-side-shared"><Cross /><span className="ap">Shared by every app</span></div>
+        <StandardRow selection={selection} open={setSelection} />
       </div>
     </div>
   );
