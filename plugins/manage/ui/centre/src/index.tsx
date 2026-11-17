@@ -5,8 +5,9 @@
  * installed is one plain line saying which part is missing.
  */
 
-import { definePlugin, useHost, useQuery, useUiPlugins } from '@cortex/sdk';
-import { CHANGED, loadFailure, local, useManageSelection, type Repo, type Selection, type View } from './manage';
+import { useState } from 'react';
+import { Menu, definePlugin, useClient, useHost, useQuery, useUiPlugins } from '@cortex/sdk';
+import { CHANGED, loadFailure, local, sessionOf, useManageSelection, type Repo, type RequestView, type Selection, type View } from './manage';
 import { InboxPage } from './Inbox';
 import { RunnerPage } from './Runner';
 import './manage.css';
@@ -43,6 +44,64 @@ function RepoHead({ selection, open, repo }: { selection: Selection; open: (next
   );
 }
 
+/** A new request, as a conversation not yet begun: the first message makes the request and opens
+ * its session, where the manager answers, rates it and plans it. */
+function NewSession({ repos, selection, open }: { repos: Repo[]; selection: Selection; open: (next: Selection) => void }) {
+  const client = useClient();
+  const managed = repos.filter((repo) => repo.managed);
+  const repo = managed.find((candidate) => candidate.id === selection.repo) ?? managed[0] ?? null;
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const send = async () => {
+    const text = draft.trim();
+    if (!repo || !text || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await client.call<RequestView>('manage.request.create', { repo: repo.id, text, from: { kind: 'person' } });
+      setDraft('');
+      open(sessionOf(created));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!repo) return <p className="cm-line">Add a repository first: a request is always for one.</p>;
+  return (
+    <div className="cm-new">
+      <div className="colhead">
+        <span className="ap">New request</span>
+        <span className="grow" />
+        {managed.length > 1
+          ? <Menu label="For" value={repo.name} items={managed.map((candidate) => ({ key: candidate.id, label: candidate.name, selected: candidate.id === repo.id, onSelect: () => open({ view: 'new', repo: candidate.id, request: null, package: null }) }))} />
+          : <span className="ap faint">{repo.name}</span>}
+      </div>
+      <div className="cm-new-body">
+        <p className="cm-line">Say what should change in {repo.name}, in your own words. The manager answers here, rates the change and plans it; you can keep talking until it is right.</p>
+      </div>
+      <div className="composer cm-composer">
+        {error && <p className="inline-error" role="alert">{error}</p>}
+        <div className="cm-box">
+          <textarea className="write" rows={2} value={draft} autoFocus placeholder={`What should change in ${repo.name}?`} aria-label="Message"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void send();
+              }
+            }} />
+          <div className="tools cm-tools" role="group" aria-label="Message tools">
+            <div className="grow" />
+            <button type="button" className="detent send" disabled={busy || draft.trim() === ''} onClick={() => void send()}>{busy ? 'Sending…' : 'Send'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Centre() {
   const [selection, setSelection] = useManageSelection();
   const repos = useQuery<Repo[]>('manage.repo.list', async (client) => (await client.call<{ repos: Repo[] }>('manage.repo.list', {}))?.repos ?? [], { topics: [CHANGED] });
@@ -53,6 +112,9 @@ function Centre() {
       body = selection.request
         ? <Hosted slot="manage.session@1" missing="The session view is missing: the chat flow part (chatflow-manage) is not installed, so a request's thread cannot be shown." />
         : <p className="cm-line">Choose a request in the sidebar to open its session.</p>;
+      break;
+    case 'new':
+      body = <NewSession repos={repos.data ?? []} selection={selection} open={setSelection} />;
       break;
     case 'charter':
     case 'releases':

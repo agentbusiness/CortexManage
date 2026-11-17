@@ -126,6 +126,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
   const [draft, setDraft] = useState<Draft>(base);
   const [synced, setSynced] = useState(baseText);
   const [invalid, setInvalid] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   // The repository changed elsewhere: an untouched form follows it, an edited one keeps its edits.
   if (synced !== baseText) {
     if (JSON.stringify(draft) === synced) setDraft(base);
@@ -184,38 +185,37 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
 
   return (
     <div className="cm-set-grid" data-repo={repo.id}>
-      <span className="ap">Managed</span>
-      <span className="cm-set-cell">
-        <button type="button" className="sw" aria-pressed={draft.managed} aria-label="Managed" onClick={() => set({ managed: !draft.managed })} />
-        <span className="cm-set-note">{draft.managed ? 'Requests for it are planned, built and released.' : 'Left out: listed, greyed, never built.'}</span>
-      </span>
-
       <span className="ap">Name</span>
       <span className="cm-set-cell">
         <label className="field"><input value={draft.name} aria-label="Name" onChange={(event) => set({ name: event.target.value })} /></label>
         <span className="ap faint">Requests {repo.prefix}-0001…</span>
       </span>
 
-      <span className="ap cm-set-h">Source</span>
       <span className="ap">Git URL</span>
       <span className="cm-set-cell"><label className="field"><input value={draft.url} aria-label="Git URL" onChange={(event) => set({ url: event.target.value })} /></label></span>
       <span className="ap">Main branch</span>
       <span className="cm-set-cell"><label className="field"><input value={draft.main} aria-label="Main branch" onChange={(event) => set({ main: event.target.value })} /></label></span>
-      <span className="ap">A landed package</span>
-      <span className="cm-set-cell">
-        <span className="seg-set" role="group" aria-label="What a landed package also does">
-          <button type="button" aria-pressed={draft.changes !== 'github-pr'} onClick={() => set({ changes: 'none' })}>Main branch only</button>
-          <button type="button" aria-pressed={draft.changes === 'github-pr'} onClick={() => set({ changes: 'github-pr' })}>Also a pull request</button>
-        </span>
-      </span>
-
-      <span className="ap cm-set-h">Runner</span>
       <span className="ap">Builds on</span>
       <span className="cm-set-cell">
         <Menu label="Computer" value={draft.runner ? draft.runner_name || draft.runner : 'this computer'} items={runnerItems} />
         {peers.error && !peers.data && (
           <span className="cm-set-note">The other computers cannot be listed: {peers.errorCode === 'unavailable' ? 'the mesh is not running' : peers.error}.</span>
         )}
+      </span>
+
+      <span />
+      <span className="cm-set-cell">
+        <button type="button" className="detent" aria-pressed={advanced} aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>Advanced</button>
+        {!advanced && <span className="cm-set-note">Hold and soak times, rework rounds, budgets, the daily train and the paths that make a change major. The defaults work.</span>}
+      </span>
+      {advanced && (
+        <>
+      <span className="ap">A landed package</span>
+      <span className="cm-set-cell">
+        <span className="seg-set" role="group" aria-label="What a landed package also does">
+          <button type="button" aria-pressed={draft.changes !== 'github-pr'} onClick={() => set({ changes: 'none' })}>Main branch only</button>
+          <button type="button" aria-pressed={draft.changes === 'github-pr'} onClick={() => set({ changes: 'github-pr' })}>Also a pull request</button>
+        </span>
       </span>
 
       <span className="ap cm-set-h">Policy</span>
@@ -256,6 +256,9 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
       <span className="cm-set-cell">
         <textarea className="cm-area" value={draft.minor_paths} aria-label="Paths that make a change at least minor, one per line" spellCheck={false} onChange={(event) => set({ minor_paths: event.target.value })} />
       </span>
+
+        </>
+      )}
 
       <span />
       <span className="cm-set-foot">

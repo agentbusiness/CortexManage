@@ -348,8 +348,10 @@ fn no_secrets(files: &[Changed], data: &Checks) -> Outcome {
     out
 }
 
-/// Run every check that can run. `rules` are the rules in force for the repository: a finding
-/// names the rule its check keeps, when a rule says it is kept by that check.
+/// Run the checks this repository's own rules ask for. `rules` are the rules in force for the
+/// repository: a check runs only when one of them says it is kept by that check, and a finding
+/// names that rule. A repository without such a rule is not held to it. The one check every
+/// repository gets is the one for secrets.
 pub fn run(params: &CheckParams, rules: &[Rule], data: &Checks) -> CheckAnswer {
     let files = changed_files(params);
     let outcomes = [
@@ -364,10 +366,13 @@ pub fn run(params: &CheckParams, rules: &[Rule], data: &Checks) -> CheckAnswer {
     for (id, outcome) in outcomes {
         // A check switched off in the data file (`not_run`) does not run, and says so by its absence.
         let Some(check) = data.text(id).filter(|check| check.not_run.is_empty()) else { continue };
+        let rule = rules.iter().find(|rule| rule.kept_by == kept_by::CHECK && rule.check == id).map(|rule| shown_id(rule, &params.repo)).unwrap_or_default();
+        if rule.is_empty() && id != NO_SECRETS {
+            continue;
+        }
         if outcome.ran {
             answer.ran.push(id.to_owned());
         }
-        let rule = rules.iter().find(|rule| rule.kept_by == kept_by::CHECK && rule.check == id).map(|rule| shown_id(rule, &params.repo)).unwrap_or_default();
         for (file, line, mut vars) in outcome.found {
             vars.push(("file", file.clone()));
             let vars: Vec<(&str, &str)> = vars.iter().map(|(name, value)| (*name, value.as_str())).collect();

@@ -455,7 +455,8 @@ impl Charters {
         let checked = self.data.checks().and_then(|data| {
             let answer = checks::run(&CheckParams { repo: repo.into(), diff: diff.into(), ..CheckParams::default() }, &shelf.rules_in_force(repo), &data);
             let found = answer.findings.len() == 1 && answer.findings[0].check == checks::NO_NATIVE_CONTROLS && answer.findings[0].line == 2 && answer.findings[0].rule == "V1";
-            if !answer.ok && found && answer.ran.len() == 6 { Ok(answer.findings[0].text.clone()) } else { Err(format!("ran {:?}, found {:?}", answer.ran, answer.findings)) }
+            // Only the check a rule asks for runs, and the one for secrets.
+            if !answer.ok && found && answer.ran == [checks::NO_NATIVE_CONTROLS, checks::NO_SECRETS] { Ok(answer.findings[0].text.clone()) } else { Err(format!("ran {:?}, found {:?}", answer.ran, answer.findings)) }
         });
         step("the checks find a native control in a small diff", checked);
 

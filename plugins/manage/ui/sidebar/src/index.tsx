@@ -1,5 +1,6 @@
 /**
- * workbench.sidebar@1 — at the top New request and Add repo, each a small form in place. Then the
+ * workbench.sidebar@1 — at the top New request (it opens the conversation in the centre) and Add
+ * repo (a sheet: from GitHub, or any git address). Then the
  * repositories, and under each its open requests: a package of several requests is a bracket
  * around them. Below, under its own heading, the shared standard, only when the person's
  * repositories carry one.
@@ -8,7 +9,7 @@
  */
 
 import { useState } from 'react';
-import { Cross, Menu, definePlugin, useClient, useHost, useNow, useQuery, type Client } from '@cortex/sdk';
+import { Cross, definePlugin, useHost, useNow, useQuery, type Client } from '@cortex/sdk';
 import {
   CHANGED,
   STAGE_LABEL,
@@ -19,13 +20,13 @@ import {
   sessionOf,
   shortStage,
   timeOf,
-  useAct,
   useManageSelection,
   type PackageView,
   type Repo,
   type RequestView,
   type Selection,
 } from './manage';
+import { AddRepo } from './AddRepo';
 import './manage.css';
 import './sidebar.css';
 
@@ -108,7 +109,7 @@ function RepoBlock({ repo, index, selection, open, now }: { repo: Repo; index: n
     { topics: [CHANGED] },
   );
   const open_ = requests.data ?? [];
-  const on = selection.repo === repo.id && selection.view !== 'inbox' && selection.view !== 'standard';
+  const on = selection.repo === repo.id && selection.view !== 'inbox' && selection.view !== 'standard' && selection.view !== 'new';
   const sub = repo.managed
     ? `builds on ${repo.runner_name || 'this computer'}${requests.data ? ` · ${open_.length === 0 ? 'no open request' : count(open_.length, 'open request')}` : ''}`
     : 'not managed yet';
@@ -178,128 +179,11 @@ function SharedStandard({ selection, open }: { selection: Selection; open: (next
   );
 }
 
-function NewRequest({ repos, selection, done }: { repos: Repo[]; selection: Selection; done: (next: Selection | null) => void }) {
-  const client = useClient();
-  const act = useAct();
-  const managed = repos.filter((repo) => repo.managed);
-  const [repoId, setRepoId] = useState<string | null>(() => (managed.some((repo) => repo.id === selection.repo) ? selection.repo : managed[0]?.id ?? null));
-  const [text, setText] = useState('');
-  const [urgent, setUrgent] = useState(false);
-  const repo = managed.find((candidate) => candidate.id === repoId) ?? null;
-  const send = () => {
-    if (!repo || !text.trim()) return;
-    void act.run('send', 'Sending the request', async () => {
-      // `urgent` is only sent when the person says so; otherwise the assessment decides.
-      const created = await client.call<RequestView>('manage.request.create', {
-        repo: repo.id,
-        text: text.trim(),
-        from: { kind: 'person' },
-        ...(urgent ? { urgent: true } : {}),
-      });
-      done(sessionOf(created));
-    });
-  };
-  return (
-    <div className="cm-side-form cm-form" data-form="request">
-      <span className="ap">New request</span>
-      {managed.length === 0 ? (
-        <p className="cm-line flush">Add a repository first: a request is always for one.</p>
-      ) : (
-        <>
-          <div className="cm-form-row">
-            <Menu label="Repository" value={repo?.name ?? 'choose'} items={managed.map((candidate) => ({
-              key: candidate.id, label: candidate.name, note: candidate.prefix, selected: candidate.id === repoId, onSelect: () => setRepoId(candidate.id),
-            }))} />
-          </div>
-          <textarea className="cm-area" value={text} placeholder="What should change, in your own words" aria-label="The request" onChange={(event) => setText(event.target.value)} />
-          <div className="cm-form-row">
-            <button type="button" className="sw" aria-pressed={urgent} aria-label="Urgent" onClick={() => setUrgent(!urgent)} />
-            <span className="ap faint">Urgent</span>
-            <span className="grow" />
-            <button type="button" className="detent" onClick={() => done(null)}>Cancel</button>
-            <button type="button" className="detent send" aria-pressed={Boolean(repo && text.trim())} disabled={!repo || !text.trim() || act.busy !== null} onClick={send}>Send</button>
-          </div>
-        </>
-      )}
-      {managed.length === 0 && <div className="cm-form-row"><span className="grow" /><button type="button" className="detent" onClick={() => done(null)}>Close</button></div>}
-      {act.failed('send') && <p className="inline-error">{act.failed('send')}</p>}
-    </div>
-  );
-}
-
-/** A joined computer as `mesh.peers` answers it (the fields the runner menu reads). */
-interface Peer { member: { node: string; name: string }; card?: { software?: string } | null; reachable: boolean }
-
-function useRunners() {
-  // Only a computer running CortexCode can build: its card says which app it is.
-  return useQuery<Peer[]>('mesh.peers:runners', async (client) => {
-    const peers = (await client.call<{ peers: Peer[] }>('mesh.peers', {}))?.peers ?? [];
-    return peers.filter((peer) => peer.card?.software === 'cortexcode');
-  }, { topics: ['mesh.changed'] });
-}
-
-function AddRepo({ done }: { done: (next: Selection | null) => void }) {
-  const client = useClient();
-  const act = useAct();
-  const runners = useRunners();
-  const [name, setName] = useState('');
-  const [prefix, setPrefix] = useState('');
-  const [url, setUrl] = useState('');
-  const [main, setMain] = useState('main');
-  const [runner, setRunner] = useState<{ node: string; name: string }>({ node: '', name: '' });
-  const ready = Boolean(name.trim() && url.trim() && main.trim());
-  const add = () => {
-    if (!ready) return;
-    void act.run('add', 'Adding the repository', async () => {
-      const created = await client.call<Repo>('manage.repo.create', {
-        name: name.trim(),
-        prefix: prefix.trim().toUpperCase(),
-        source: { kind: 'git', url: url.trim(), main: main.trim(), changes: 'none' },
-        runner: runner.node,
-        runner_name: runner.name,
-        managed: true,
-      });
-      done({ view: 'charter', repo: created.id, request: null, package: null });
-    });
-  };
-  const items = [
-    { key: '', label: 'This computer', selected: runner.node === '', onSelect: () => setRunner({ node: '', name: '' }) },
-    ...(runners.data ?? []).map((peer) => ({
-      key: peer.member.node,
-      label: peer.member.name,
-      note: peer.reachable ? 'CortexCode' : 'not reachable now',
-      selected: runner.node === peer.member.node,
-      onSelect: () => setRunner({ node: peer.member.node, name: peer.member.name }),
-    })),
-  ];
-  return (
-    <div className="cm-side-form cm-form" data-form="repo">
-      <span className="ap">Add repo</span>
-      <label className="field"><input value={name} placeholder="Name" aria-label="Name" onChange={(event) => setName(event.target.value)} /></label>
-      <label className="field"><input value={prefix} placeholder="Prefix, e.g. CT" aria-label="Prefix of request numbers" maxLength={3} onChange={(event) => setPrefix(event.target.value)} /></label>
-      <label className="field"><input value={url} placeholder="Git URL" aria-label="Git URL" onChange={(event) => setUrl(event.target.value)} /></label>
-      <label className="field"><input value={main} placeholder="Main branch" aria-label="Main branch" onChange={(event) => setMain(event.target.value)} /></label>
-      <div className="cm-form-row">
-        <Menu label="Builds on" value={runner.name || 'this computer'} items={items} />
-      </div>
-      {runners.error && !runners.data && (
-        <p className="cm-line flush">The other computers cannot be listed ({runners.errorCode === 'unavailable' ? 'the mesh is not running' : runners.error}), so only this computer is offered.</p>
-      )}
-      <div className="cm-form-row">
-        <span className="grow" />
-        <button type="button" className="detent" onClick={() => done(null)}>Cancel</button>
-        <button type="button" className="detent send" aria-pressed={ready} disabled={!ready || act.busy !== null} onClick={add}>Add</button>
-      </div>
-      {act.failed('add') && <p className="inline-error">{act.failed('add')}</p>}
-    </div>
-  );
-}
-
 function Sidebar() {
   const host = useHost();
   const repos = useRepos();
   const [selection, setSelection] = useManageSelection();
-  const [form, setForm] = useState<'request' | 'repo' | null>(null);
+  const [form, setForm] = useState<'repo' | null>(null);
   // Times in the brackets turn from a clock into a day at midnight.
   const now = useNow(60_000, true);
   const list = repos.data ?? [];
@@ -311,11 +195,11 @@ function Sidebar() {
   return (
     <div className="cm-side" data-build={__CORTEX_BUILD__}>
       <div className="cm-side-acts">
-        <button type="button" className="detent" aria-pressed={form === 'request'} title="Describe a change to one repository; it becomes a session under that repository" onClick={() => setForm(form === 'request' ? null : 'request')}>New request</button>
+        <button type="button" className="detent" aria-pressed={selection.view === 'new'} title="Describe a change to a repository; it becomes a session under that repository"
+          onClick={() => { setForm(null); setSelection({ view: 'new', repo: selection.repo ?? list.find((repo) => repo.managed)?.id ?? null, request: null, package: null }); }}>New request</button>
         <button type="button" className="detent" aria-pressed={form === 'repo'} title="Add a git repository for CortexManage to manage" onClick={() => setForm(form === 'repo' ? null : 'repo')}>Add repo</button>
       </div>
-      {form === 'request' && <NewRequest repos={list} selection={selection} done={done} />}
-      {form === 'repo' && <AddRepo done={done} />}
+      {form === 'repo' && <AddRepo onClose={() => setForm(null)} onAdded={(next) => done(next)} />}
       <div className="index-h"><Cross /><span className="ap">Repositories</span></div>
       <div className="cm-side-scroll">
         {repos.error && !repos.data && <p className="inline-error">{loadFailure('The repositories', repos)}</p>}

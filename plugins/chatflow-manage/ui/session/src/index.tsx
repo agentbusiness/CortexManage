@@ -172,44 +172,38 @@ function Session() {
       </div>
 
       <div className="composer cm-composer">
-        <div className="composer-h">
-          {working && (
-            <>
-              <span className="pip run" aria-hidden />
-              <span className="ap origin">{flow.data?.stage === 'say' ? 'Passing it on' : `Working · ${flow.data?.stage ?? ''}`}</span>
-              <button type="button" className="detent" onClick={() => void run(`${FLOW}.cancel`, { session_id: sessionId })}>Stop</button>
-            </>
-          )}
-          {error && <span className="ap live" role="alert">{error}</span>}
-          <span className="grow" />
-          {beforeBuilding && (
-            <>
-              <span className="ap faint" id="cm-urgent">Urgent</span>
-              <button
-                type="button"
-                className="sw"
-                aria-labelledby="cm-urgent"
-                aria-pressed={request.urgent === true}
-                disabled={busy}
-                onClick={() => void run('manage.request.edit', { id: request.id, urgent: !request.urgent })}
-              />
-            </>
-          )}
-        </div>
-        <div className="write-row">
+        {error && <p className="inline-error" role="alert">{error}</p>}
+        <div className="cm-box">
           <textarea
             className="write"
-            rows={2}
+            rows={1}
             value={draft}
             disabled={ended}
-            placeholder={ended ? 'This request has ended.' : beforeBuilding ? 'Add to the request, or say what to change in the plan…' : 'Tell the builder something…'}
-            aria-label="Write to this request"
+            placeholder={ended ? 'This request has ended.' : beforeBuilding ? `Say more about this change, or what to change in the plan…` : 'Tell the builder something…'}
+            aria-label="Message"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKey}
           />
-          <button type="button" className="detent send" disabled={ended || busy || draft.trim() === ''} aria-pressed={!ended && !busy && draft.trim() !== ''} onClick={() => void send()}>
-            {beforeBuilding || ended ? 'Send' : 'Steer'}
-          </button>
+          <div className="tools cm-tools" role="group" aria-label="Message tools">
+            {beforeBuilding && (
+              <>
+                <button type="button" className="sw" aria-labelledby="cm-urgent" aria-pressed={request.urgent === true} disabled={busy}
+                  onClick={() => void run('manage.request.edit', { id: request.id, urgent: !request.urgent })} />
+                <span className="ap faint" id="cm-urgent">Urgent</span>
+              </>
+            )}
+            {working && (
+              <>
+                <span className="pip run" aria-hidden />
+                <span className="ap origin">{flow.data?.stage === 'say' ? 'Answering' : `Working · ${flow.data?.stage ?? ''}`}</span>
+              </>
+            )}
+            <div className="grow" />
+            {working && <button type="button" className="detent warn" onClick={() => void run(`${FLOW}.cancel`, { session_id: sessionId })}>Stop</button>}
+            <button type="button" className="detent send" disabled={ended || busy || draft.trim() === ''} onClick={() => void send()}>
+              {beforeBuilding || ended ? 'Send' : 'Steer'}
+            </button>
+          </div>
         </div>
       </div>
     </main>

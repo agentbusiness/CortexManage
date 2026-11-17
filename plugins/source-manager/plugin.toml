@@ -25,17 +25,7 @@ exec = "backend/target/release/cc-source"
 dir = "ui"
 build = ["npm", "run", "build"]
 
-# Settings > History: every change, revert, the update state.
-[[ui.package]]
-dir = "ui/settings-history"
-id = "source-manager.settings-history"
-slot = "settings.history@1"
 
-# Settings > Backup & Sync.
-[[ui.package]]
-dir = "ui/settings-backup"
-id = "source-manager.settings-backup"
-slot = "settings.backup@1"
 
 # Settings > Storage.
 [[ui.package]]

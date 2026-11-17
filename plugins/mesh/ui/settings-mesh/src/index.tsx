@@ -2,52 +2,63 @@
  * settings.mesh@1 — joining computers. Nothing to set: an invitation (one hour, used once) to copy
  * for another computer, a box to paste one into, and the joined computers with Remove. What runs
  * where (a session's model, an agent, a command) is decided by the host from what each computer
- * reports; the list shows it as it happens. Each member has one switch: whether it may work on
- * this computer (`mesh.allow`); one that may not is offered nothing here.
+ * reports; the list shows it as it happens. CortexManage: every member may work here (the
+ * model servers administer each other; there is no switch), and each member is one line: whether
+ * it is reachable, its name, its app, its computer and models, how it is reached, Remove.
  */
 
 import { useState } from 'react';
 import { definePlugin, errorMessage, useClient, useHost, useNow, useQuery } from '@cortex/sdk';
 import './mesh.css';
 
-interface Member { node: string; name: string; added_ms: number; by: string }
+interface Member { node: string; name: string; added_ms: number; by: string; local?: boolean }
 interface ModelCard { plugin: string; model_id: string; variant: string; family: string; tags?: string[]; slots: number; slots_busy: number; queued: number; tok_s: number }
 interface Card { software: string; chip: string; memory_bytes: number; free_memory_bytes: number; on_mains: boolean; user_active: boolean; models?: ModelCard[]; languages: { id: string; version: string }[]; docker: boolean; agents_running: number }
-interface Peer { member: Member; card?: Card | null; reachable: boolean; path: string; rtt_ms: number; serving: string[] }
+interface Peer { member: Member; card?: Card | null; reachable: boolean; path: string; rtt_ms: number; serving: string[]; computer?: string }
 interface PairCode { code: string; expires_ms: number; invitation: string }
 interface Placed { session_id: string; node: string; name: string }
 interface Network { id: string; founder: string; founded_ms: number; members: number }
 interface Status { node: string; name: string; members: number; reachable: number; network?: Network | null; pairing?: PairCode | null; serving: [string, string][]; placed: Placed[]; allowed: string[] }
-
-/** What every member may do on this computer until it is switched off (`mesh.allow`). */
-const ALLOW_LABEL = 'Projects';
-const ALLOW_TEXT = 'may see the projects on this computer';
 
 function gb(bytes: number): string {
   const value = bytes / (1024 * 1024 * 1024);
   return `${value < 10 ? value.toFixed(1).replace(/\.0$/, '') : Math.round(value)} GB`;
 }
 
-/** A toolchain's version number out of its tool's own line ("Apple clangd version 21.0.0 (…)" -> 21.0.0). */
-function shortVersion(version: string): string {
-  return /\d+(?:\.\d+)+/.exec(version)?.[0] ?? '';
-}
-
 /** The app identifies itself in its card; model tags do not identify the app. */
 function softwareName(software?: string): string {
-  if (software === 'cortexmanage') return 'CortexManage';
   if (software === 'cortexcode') return 'CortexCode';
   if (software === 'cortexterm') return 'CortexTerm';
-  if (software === 'cortexmodelserver') return 'CortexModelServer';
-  if (software === 'cortexagent') return 'CortexAgent';
-  return software || 'unknown';
+  if (software === 'cortexmanage') return 'CortexManage';
+  if (software === 'cortexmodelserver') return 'Model server';
+  return software || '';
 }
 
 function where(path: string): string {
-  if (path === 'lan') return 'on this network';
-  if (path === 'relay') return 'remote, through a relay';
-  if (path === 'direct') return 'remote, direct';
+  if (path === 'lan') return 'LAN';
+  if (path === 'relay') return 'RELAY';
+  if (path === 'direct') return 'DIRECT';
   return '';
+}
+
+/** One computer: its apps on the network, together (Remove takes the computer out as a whole). */
+interface Computer { key: string; name: string; here: boolean; peers: Peer[] }
+
+/** The members by computer: the machine key the log ties them to; a member without one (an older
+ *  app) goes with the computer of its name. */
+function byComputer(peers: Peer[]): Computer[] {
+  const groups = new Map<string, Computer>();
+  const nameKey = new Map<string, string>();
+  for (const peer of peers) if (peer.computer) nameKey.set(peer.member.name, peer.computer);
+  for (const peer of peers) {
+    const key = peer.member.local ? 'here' : peer.computer || nameKey.get(peer.member.name) || `name:${peer.member.name}`;
+    const group = groups.get(key) ?? { key, name: peer.member.name, here: Boolean(peer.member.local), peers: [] };
+    group.peers.push(peer);
+    groups.set(key, group);
+  }
+  const rank = (computer: Computer) => (computer.here ? 0 : computer.peers.some((peer) => peer.reachable) ? 1 : 2) * 2
+    + (computer.peers.some((peer) => peer.card?.software === 'cortexmodelserver') ? 0 : 1);
+  return [...groups.values()].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
 function MeshPanel() {
@@ -145,47 +156,46 @@ function MeshPanel() {
       </div>
 
       {others.length > 0 && (
-        <ul className="cx-mesh-list">
-          {others.map((peer) => {
-            const member = peer.member;
-            const card = peer.card;
-            const placedHere = data.placed.filter((placed) => placed.node === member.node).length;
-            const allowed = data.allowed.includes(member.node);
-            return (
-              <li key={member.node} data-node={member.node} className="cx-mesh-grid">
-                <span className="cx-mesh-name">
-                  <span className="t">{member.name}</span>
-                  <span className={`ap ${peer.reachable ? 'live' : 'faint'}`}>{peer.reachable ? `${where(peer.path)}${peer.rtt_ms ? ` · ${peer.rtt_ms} ms` : ''}` : 'not reachable now'}</span>
-                </span>
-                <button type="button" className="detent tiny warn" data-action="revoke" disabled={busy !== null} onClick={() => void run('revoke', async () => { await client.call('mesh.revoke', { node: member.node }); return `${member.name} removed`; })}>Remove</button>
-                <span className="ap">Software</span>
-                <span className="v">{softwareName(card?.software)}</span>
-                <span />
-                <span className="ap">{ALLOW_LABEL}</span>
-                <span className="v">{ALLOW_TEXT}</span>
-                <button type="button" className="sw" data-action="allow" aria-pressed={allowed} aria-label={`${member.name} ${ALLOW_TEXT}`} disabled={busy !== null} onClick={() => void run('allow', async () => { await client.call('mesh.allow', { node: member.node, allowed: !allowed }); })} />
-                {card && <>
-                  <span className="ap">Computer</span>
-                  <span className="v">{[card.chip, `${gb(card.memory_bytes)}, ${gb(card.free_memory_bytes)} free`, card.on_mains ? 'on mains' : 'on battery', card.docker ? 'Docker' : '', card.user_active ? 'in use' : ''].filter(Boolean).join(' · ')}</span>
-                  <span />
-                  <span className="ap">{(card.models ?? []).length > 1 ? 'Models' : 'Model'}</span>
-                  <span className="v" title={(card.models ?? []).map((model) => model.model_id).join('\n')}>{(card.models ?? []).length > 0 ? (card.models ?? []).map((model) => [model.variant || model.model_id, (model.tags ?? []).join(', '), model.slots_busy > 0 || model.queued > 0 ? 'busy' : 'free', model.tok_s ? `${model.tok_s.toFixed(1)} tok/s` : ''].filter(Boolean).join(' · ')).join('; ') : 'none'}</span>
-                  <span />
-                  {card.languages.length > 0 && <>
-                    <span className="ap">Languages</span>
-                    <span className="v">{card.languages.map((language) => [language.id, shortVersion(language.version)].filter(Boolean).join(' ')).join(', ')}</span>
-                    <span />
-                  </>}
-                  {(peer.serving.length > 0 || placedHere > 0) && <>
-                    <span className="ap">For here</span>
-                    <span className="v">{[peer.serving.length > 0 ? `its ${peer.serving.join(', ')} serves this computer` : '', placedHere > 0 ? `runs ${placedHere} session${placedHere === 1 ? '' : 's'} from here` : ''].filter(Boolean).join(' · ')}</span>
-                    <span />
-                  </>}
-                </>}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="cx-mesh-members">
+          <div className="cx-mesh-members-head">
+            <span className="ap">Computers</span>
+            <span className="grow" />
+            <span className="ap faint">{byComputer(others).filter((computer) => computer.peers.some((peer) => peer.reachable)).length} of {byComputer(others).length} reachable</span>
+          </div>
+          <ul className="cx-mesh-list">
+            {byComputer(others).map((computer) => {
+              const live = computer.peers.filter((peer) => peer.reachable);
+              const card = live.find((peer) => peer.card)?.card ?? computer.peers.find((peer) => peer.card)?.card ?? null;
+              const apps = [...new Set(live.map((peer) => softwareName(peer.card?.software)).filter(Boolean))];
+              const away = computer.peers.length - live.length;
+              const models = [...new Set(live.flatMap((peer) => (peer.card?.models ?? []).map((model) => model.variant || model.model_id)))];
+              const best = [...live].sort((a, b) => (a.rtt_ms || 9999) - (b.rtt_ms || 9999))[0];
+              const server = computer.peers.some((peer) => peer.card?.software === 'cortexmodelserver');
+              const detail = live.length && card ? [card.chip, gb(card.memory_bytes), models.join(', ')].filter(Boolean).join(' · ') : 'not reachable now';
+              return (
+                <li key={computer.key} className={`cx-mesh-row${live.length ? '' : ' away'}${server ? ' server' : ''}`}
+                  title={[computer.name, apps.join(', '), detail, away ? `${away} app${away === 1 ? '' : 's'} not reachable` : ''].filter(Boolean).join(' · ')}>
+                  <span className={`cx-mesh-pip${live.length ? ' on' : ''}`} aria-hidden />
+                  <span className="cx-mesh-row-name">{computer.here ? 'This computer' : computer.name}</span>
+                  <span className="ap cx-mesh-row-app">{apps.join(' · ')}{away && live.length ? <span className="faint"> +{away}</span> : null}</span>
+                  <span className="cx-mesh-row-detail">{detail}</span>
+                  <span className="ap faint cx-mesh-row-where">{best ? [where(best.path), best.rtt_ms ? `${best.rtt_ms} MS` : ''].filter(Boolean).join(' · ') : ''}</span>
+                  {computer.here ? <span /> : (
+                    <button type="button" className="detent tiny warn cx-mesh-row-remove" data-action="revoke" disabled={busy !== null} aria-label={`Remove ${computer.name}`}
+                      onClick={() => void run('revoke', async () => {
+                        // Removing one app takes its whole computer out; members of an older app
+                        // that the log does not tie to it go one by one.
+                        for (const peer of computer.peers) {
+                          try { await client.call('mesh.revoke', { node: peer.member.node }); } catch { /* already gone with its computer */ }
+                        }
+                        return `${computer.name} removed`;
+                      })}>Remove</button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {error && <p className="inline-error">{error}</p>}
