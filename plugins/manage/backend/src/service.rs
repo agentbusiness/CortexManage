@@ -328,7 +328,10 @@ impl Manager {
     /// planned or validated, and the jobs that were running.
     fn go_on(self: &Arc<Self>) {
         let (nodes, requests, packages) = self.store.read(|data| {
-            let nodes: Vec<String> = data.repos.values().filter(|rec| rec.repo.managed && !rec.repo.runner.is_empty()).map(|rec| rec.repo.runner.clone()).collect();
+            let mut nodes: Vec<String> = data.repos.values().filter(|rec| rec.repo.managed && !rec.repo.runner.is_empty()).map(|rec| rec.repo.runner.clone()).collect();
+            nodes.extend(data.packages.values().filter(|package| !package.runner.is_empty()).map(|package| package.runner.clone()));
+            nodes.sort();
+            nodes.dedup();
             let requests: Vec<String> = data
                 .requests
                 .values()
@@ -434,45 +437,81 @@ impl Manager {
     }
 
     /// The repository's runner node, or a plain error when it has none.
-    /// The computer that builds a repository: the one set for it, or, when none is set ("this
-    /// computer"), the CortexCode running here. That one is found by what it declares (a member of
-    /// the mesh on this computer whose card says its app is CortexCode, and that answers
-    /// `runner.list`), is remembered for the repository, and is started when it is not running.
-    pub async fn runner_of(&self, repo: &Repo) -> Result<String, RpcError> {
+    /// The computer a package builds on: the one chosen for it when its job started, else the
+    /// repository's own.
+    pub fn node_of(package: &Package, repo: &Repo) -> String {
+        if package.runner.is_empty() { repo.runner.clone() } else { package.runner.clone() }
+    }
+
+    /// A computer to build a repository on, as (mesh node, name). The one set for the repository;
+    /// with none set, any CortexCode of the mesh: a reachable member whose card says its app is
+    /// CortexCode and that answers `runner.list`, this computer's first, then by node. `free`:
+    /// one with no job running (a job is about to start); otherwise any that answers (a read).
+    /// When none answers and none runs here, the CortexCode on this computer is started.
+    pub async fn pick_runner(&self, repo: &Repo, free: bool) -> Result<(String, String), RpcError> {
         if !repo.runner.is_empty() {
-            return Ok(repo.runner.clone());
+            return Ok((repo.runner.clone(), repo.runner_name.clone()));
+        }
+        #[derive(serde::Deserialize)]
+        struct Jobs {
+            #[serde(default)]
+            jobs: Vec<Facts>,
         }
         let peers: Value = self.peer("mesh.peers", json!({})).await?;
-        let mut here = 0;
+        let mut found: Vec<(bool, String, String)> = Vec::new();
         for peer in peers.get("peers").and_then(Value::as_array).into_iter().flatten() {
-            let local = peer.pointer("/member/local").and_then(Value::as_bool) == Some(true);
             let software = peer.pointer("/card/software").and_then(Value::as_str) == Some(RUNNER_SOFTWARE);
+            let reachable = peer.get("reachable").and_then(Value::as_bool) == Some(true);
             let node = peer.pointer("/member/node").and_then(Value::as_str).unwrap_or_default();
-            if !local || !software || node.is_empty() {
-                continue;
+            if software && reachable && !node.is_empty() {
+                let here = peer.pointer("/member/local").and_then(Value::as_bool) == Some(true);
+                let name = peer.pointer("/member/name").and_then(Value::as_str).unwrap_or_default();
+                found.push((here, node.to_owned(), name.to_owned()));
             }
-            here += 1;
+        }
+        // This computer's first, then a fixed order.
+        found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        let (mut answered, mut here) = (0, 0);
+        for (local, node, name) in &found {
+            here += usize::from(*local);
             self.links.ensure(self.ctx()?, node);
-            if self.runner::<Value>(node, runner::methods::LIST, json!({}), Duration::from_secs(10)).await.is_ok() {
-                let node = node.to_owned();
-                self.store.update_repo(&repo.id, |rec| {
-                    rec.repo.runner = node.clone();
-                    rec.repo.runner_name = self.t("runner_here", &[]);
-                });
-                self.changed("repo", &repo.id, &repo.id);
-                return Ok(node);
+            let Ok(list) = self.runner::<Jobs>(node, runner::methods::LIST, json!({}), Duration::from_secs(10)).await else { continue };
+            answered += 1;
+            if !free || !list.jobs.iter().any(|job| job.state == "running") {
+                let name = if *local { self.t("runner_here", &[]) } else { name.clone() };
+                return Ok((node.clone(), name));
             }
+        }
+        if answered > 0 {
+            return Err(RpcError::new(codes::UNAVAILABLE, self.t("runner_all_busy", &[])));
         }
         if here > 0 {
             // CortexCode runs here but does not answer as a runner: it has no runner part yet.
             return Err(RpcError::new(codes::CONFLICT, self.t("runner_no_part", &[])));
         }
-        // Not running: start it by its own identifier, in the background. The next look finds it.
+        // None anywhere: start the one on this computer by its own identifier, in the background.
         let started = tokio::task::spawn_blocking(|| std::process::Command::new("/usr/bin/open").args(["-g", "-b", RUNNER_BUNDLE]).status().is_ok_and(|status| status.success())).await.unwrap_or(false);
         if started {
             Err(RpcError::new(codes::UNAVAILABLE, self.t("runner_starting", &[])))
         } else {
             Err(RpcError::new(codes::CONFLICT, self.t("runner_not_installed", &[])))
+        }
+    }
+
+    /// The computer to read a repository on or release it from: where its newest package was
+    /// built (that one holds its code), else any CortexCode that answers.
+    pub async fn runner_of(&self, repo: &Repo) -> Result<String, RpcError> {
+        if !repo.runner.is_empty() {
+            return Ok(repo.runner.clone());
+        }
+        let last = self.store.read(|data| {
+            let mut built: Vec<&Package> = data.packages.values().filter(|package| package.repo == repo.id && !package.runner.is_empty()).collect();
+            built.sort_by_key(|package| package.created_ms);
+            built.last().map(|package| package.runner.clone())
+        });
+        match last {
+            Some(node) => Ok(node),
+            None => Ok(self.pick_runner(repo, false).await?.0),
         }
     }
 
@@ -576,6 +615,19 @@ impl Manager {
             (1u32..).map(|number| format!("R{number}")).find(|candidate| !prefixes.contains(candidate)).unwrap_or_default()
         };
         let mut source = params.source;
+        // A new repository's commits are made as the person already said for their others: the
+        // identity of the repository added last that has one.
+        if source.commit_name.is_empty() && source.commit_email.is_empty() {
+            let said = self.store.read(|data| {
+                let mut with: Vec<&RepoRec> = data.repos.values().filter(|rec| !rec.repo.source.commit_name.is_empty() && !rec.repo.source.commit_email.is_empty()).collect();
+                with.sort_by_key(|rec| rec.repo.created_ms);
+                with.last().map(|rec| (rec.repo.source.commit_name.clone(), rec.repo.source.commit_email.clone()))
+            });
+            if let Some((name, email)) = said {
+                source.commit_name = name;
+                source.commit_email = email;
+            }
+        }
         if source.kind.is_empty() {
             source.kind = "git".into();
         }
@@ -820,7 +872,7 @@ impl Manager {
                 stage::BUILDING | stage::PROVING => {
                     // While it is built the text goes to the builder as it was written.
                     let package = self.package(&rec.r.package)?;
-                    let node = self.repo(&rec.r.repo)?.repo.runner;
+                    let node = Self::node_of(&package, &self.repo(&rec.r.repo)?.repo);
                     let steer = runner::SteerParams { job_id: package.job_id.clone(), attempt: package.attempt, text: text.clone() };
                     match self.runner::<Value>(&node, runner::methods::STEER, json!(steer), RUNNER_CALL).await {
                         Ok(_) => self.t("say_steered", &[]),
@@ -872,7 +924,11 @@ impl Manager {
     async fn runner_get(&self, params: Value) -> Result<Value, RpcError> {
         let repo = self.repo(params.get("repo").and_then(Value::as_str).unwrap_or_default())?.repo;
         if repo.runner.is_empty() {
-            return Ok(json!({"reachable": false, "node": "", "name": "", "jobs": []}));
+            // Any free CortexCode: whether one answers now, and why not when none does.
+            return Ok(match self.pick_runner(&repo, false).await {
+                Ok(_) => json!({"reachable": true, "node": "", "name": self.t("runner_any", &[]), "jobs": []}),
+                Err(error) => json!({"reachable": false, "node": "", "name": self.t("runner_any", &[]), "jobs": [], "error": error.message}),
+            });
         }
         #[derive(serde::Deserialize)]
         struct Jobs {

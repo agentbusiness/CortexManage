@@ -109,7 +109,7 @@ function RepoBlock({ repo, index, selection, open, now }: { repo: Repo; index: n
   const open_ = requests.data ?? [];
   const on = selection.repo === repo.id && selection.view !== 'inbox' && selection.view !== 'new';
   const sub = repo.managed
-    ? `builds on ${repo.runner_name || 'this computer'}${requests.data ? ` · ${open_.length === 0 ? 'no open request' : count(open_.length, 'open request')}` : ''}`
+    ? `builds on ${repo.runner_name || 'any free CortexCode'}${requests.data ? ` · ${open_.length === 0 ? 'no open request' : count(open_.length, 'open request')}` : ''}`
     : 'not managed yet';
   return (
     <section className={`cm-repo${repo.managed ? '' : ' off'}`} data-repo={repo.id}>

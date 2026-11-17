@@ -149,6 +149,12 @@ pub struct Source {
     /// `none` | `github-pr`: whether a landed package also opens a pull request.
     #[serde(default)]
     pub changes: String,
+    /// Who the commits of this repository's jobs are made as. Both empty: git's own identity on
+    /// the computer that builds.
+    #[serde(default)]
+    pub commit_name: String,
+    #[serde(default)]
+    pub commit_email: String,
 }
 
 /// Per repository; a global policy can only be stricter.
@@ -575,6 +581,12 @@ pub struct Package {
     pub reworks: u32,
     #[serde(default)]
     pub parts: Vec<String>,
+    /// The computer that builds this package (its mesh node and its name): the repository's, or
+    /// the free CortexCode chosen when its job started.
+    #[serde(default)]
+    pub runner: String,
+    #[serde(default)]
+    pub runner_name: String,
     /// The runner's job, once started.
     #[serde(default)]
     pub job_id: String,

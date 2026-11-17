@@ -63,7 +63,7 @@ export function RunnerPage({ repoId, repo }: { repoId: string; repo: Repo | unde
         {runner.error && !data && <p className="inline-error">{loadFailure('The runner', runner)}</p>}
         {data && (
           <>
-            <div className="cm-row"><span>Builds on</span><span>{data.name || repo?.runner_name || 'this computer'}</span></div>
+            <div className="cm-row"><span>Builds on</span><span>{data.name || repo?.runner_name || 'any free CortexCode'}</span></div>
             <div className="cm-row">
               <span>Answers</span>
               <span className={`ap ${data.reachable ? 'origin' : 'live'}`}>{data.reachable ? 'Reachable' : 'Not reachable'}</span>

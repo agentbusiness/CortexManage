@@ -22,6 +22,9 @@ export interface Source {
   main: string;
   /** `none` | `github-pr`. */
   changes: string;
+  /** Who the jobs' commits are made as; both empty: git's own identity on the builder. */
+  commit_name?: string;
+  commit_email?: string;
 }
 
 /** `[minutes, tokens, lines]`. */

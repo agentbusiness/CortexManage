@@ -3,8 +3,8 @@
  * from their own GitHub repositories (vcs.github.repos; what is typed only filters the list, and
  * the one pressed is the one added, with the address and branch GitHub gives for it), new on GitHub
  * (vcs.github.repo.create, by the name typed), or any git address with a name typed beside it.
- * Nothing is worked out from the shape of what is typed. It builds on the CortexCode that is
- * reachable; all of it can be changed later in Settings.
+ * Nothing is worked out from the shape of what is typed. Its jobs go to any free
+ * CortexCode; a computer can be named for it later in Settings.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -14,7 +14,6 @@ import type { Repo, Selection } from './manage';
 
 interface GithubStatus { connected: boolean; login?: string | null }
 interface GithubRepo { full_name: string; private: boolean; description: string; fork: boolean; clone_url: string; default_branch: string }
-interface Peer { member: { node: string; name: string }; card?: { software?: string } | null; reachable: boolean }
 
 type Way = 'github' | 'new' | 'address';
 
@@ -25,8 +24,6 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
   const connected = status.data?.connected === true;
   const repos = useQuery<GithubRepo[]>(connected ? `vcs.github.repos:${status.data?.login ?? ''}` : null,
     async (c) => (await c.call<{ repos: GithubRepo[] }>('vcs.github.repos', {}))?.repos ?? []);
-  // Only a computer running CortexCode can build: its card says which app it is.
-  const runners = useQuery<Peer[]>('mesh.peers:runners', async (c) => ((await c.call<{ peers: Peer[] }>('mesh.peers', {}))?.peers ?? []).filter((peer) => peer.card?.software === 'cortexcode'), { topics: ['mesh.changed'] });
   const [way, setWay] = useState<Way>('github');
   const [filter, setFilter] = useState('');
   const [picked, setPicked] = useState<GithubRepo | null>(null);
@@ -58,13 +55,13 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
   const listed = (repos.data ?? []).filter((r) => wanted === '' || r.full_name.toLowerCase().includes(wanted));
 
   const add = async (source: { name: string; url: string; main: string }) => {
-    const runner = (runners.data ?? []).find((peer) => peer.reachable) ?? null;
     const created = await client.call<Repo>('manage.repo.create', {
       name: source.name,
       prefix: '',
       source: { kind: 'git', url: source.url, main: source.main, changes: 'none' },
-      runner: runner?.member.node ?? '',
-      runner_name: runner?.member.name ?? '',
+      // No computer is named: its jobs go to any free CortexCode.
+      runner: '',
+      runner_name: '',
       managed: true,
     });
     onAdded({ view: 'new', repo: created.id, request: null, package: null });

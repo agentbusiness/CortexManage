@@ -113,7 +113,7 @@ pub fn dispatching(manager: &Manager, package: &str) -> bool {
 pub fn beat(manager: &Arc<Manager>, facts: Facts) {
     let found = manager.store.read(|data| {
         let package = data.packages.values().find(|package| !package.job_id.is_empty() && package.job_id == facts.job_id)?;
-        Some((package.clone(), data.hold, data.repos.get(&package.repo).map(|rec| rec.repo.runner.clone()).unwrap_or_default()))
+        Some((package.clone(), data.hold, data.repos.get(&package.repo).map(|rec| Manager::node_of(package, &rec.repo)).unwrap_or_default()))
     });
     let Some((package, hold, node)) = found else { return };
     let live = matches!(package.stage.as_str(), stage::BUILDING | stage::PROVING);
@@ -138,7 +138,7 @@ pub fn runner_up(manager: &Arc<Manager>, node: &str) {
         data.packages
             .values()
             .filter(|package| matches!(package.stage.as_str(), stage::BUILDING | stage::PROVING) && !package.session_id.is_empty())
-            .filter(|package| data.repos.get(&package.repo).is_some_and(|rec| rec.repo.runner == node))
+            .filter(|package| data.repos.get(&package.repo).is_some_and(|rec| Manager::node_of(package, &rec.repo) == node))
             .map(|package| package.id.clone())
             .collect()
     });
@@ -264,11 +264,21 @@ pub fn special(manager: &Manager, package: &Package) -> (bool, bool) {
 async fn start(manager: &Arc<Manager>, id: &str) -> Result<(), Fail> {
     let package = manager.package(id).map_err(|error| Fail::Ask(error.message))?;
     let repo = manager.repo(&package.repo).map_err(|error| Fail::Ask(error.message))?.repo;
-    // "This computer": the CortexCode here, started when it is not running (then: wait for it).
-    let node = match manager.runner_of(&repo).await {
-        Ok(node) => node,
-        Err(error) if error.code == codes::UNAVAILABLE => return Err(Fail::Wait("runner.start", error)),
-        Err(error) => return Err(Fail::Ask(error.message)),
+    // The computer it builds on: the one it already has (a restart goes on where its worktree
+    // is), the repository's, or any free CortexCode. None free, or one just started: wait.
+    let node = if !package.runner.is_empty() {
+        package.runner.clone()
+    } else {
+        let (node, name) = match manager.pick_runner(&repo, true).await {
+            Ok(picked) => picked,
+            Err(error) if error.code == codes::UNAVAILABLE => return Err(Fail::Wait("runner.start", error)),
+            Err(error) => return Err(Fail::Ask(error.message)),
+        };
+        manager.store.update_package(id, |package| {
+            package.runner = node.clone();
+            package.runner_name = name.clone();
+        });
+        node
     };
     let on_runner = |error: RpcError| if away(&error) { Fail::Wait("runner.prepare", error) } else { Fail::Ask(error.message) };
     let (points, first_title, goal, approach) = manager.store.read(|data| {
@@ -347,7 +357,7 @@ async fn start(manager: &Arc<Manager>, id: &str) -> Result<(), Fail> {
     let (project_id, base, attempt) = match known {
         Some(facts) => (facts.project_id, package.base.clone(), facts.attempt.max(package.attempt) + 1),
         None => {
-            let prepare = runner::PrepareParams { job_id: job_id.clone(), repo: repo.id.clone(), url: repo.source.url.clone(), main: repo.source.main.clone(), branch: branch.clone(), base: String::new() };
+            let prepare = runner::PrepareParams { job_id: job_id.clone(), repo: repo.id.clone(), url: repo.source.url.clone(), main: repo.source.main.clone(), branch: branch.clone(), base: String::new(), commit_name: repo.source.commit_name.clone(), commit_email: repo.source.commit_email.clone() };
             let prepared: runner::Prepared = manager.runner(&node, runner::methods::PREPARE, json!(prepare), RUNNER_PREPARE).await.map_err(on_runner)?;
             (prepared.project_id, prepared.base, 1)
         }
@@ -634,7 +644,7 @@ impl Actor {
     async fn refresh(&mut self) {
         let Some(package) = self.package() else { return };
         let Some(repo) = self.repo(&package) else { return };
-        match self.m.runner::<Facts>(&repo.runner, runner::methods::GET, json!({"job_id": package.job_id}), RUNNER_CALL).await {
+        match self.m.runner::<Facts>(&Manager::node_of(&package, &repo), runner::methods::GET, json!({"job_id": package.job_id}), RUNNER_CALL).await {
             Ok(facts) => self.on_beat(facts).await,
             Err(error) => tracing::info!(package = %self.id, error = %error.message, "the runner did not give the job's facts; waiting for it"),
         }
@@ -801,7 +811,7 @@ impl Actor {
     async fn call<T: serde::de::DeserializeOwned>(&self, method: &str, params: Value, limit: Duration) -> Result<T, RpcError> {
         let package = self.package().ok_or_else(|| RpcError::not_found("the package is gone"))?;
         let repo = self.repo(&package).ok_or_else(|| RpcError::not_found("the repository is gone"))?;
-        self.m.runner(&repo.runner, method, params, limit).await
+        self.m.runner(&Manager::node_of(&package, &repo), method, params, limit).await
     }
 
     async fn stop_job(&self) {
@@ -1590,10 +1600,10 @@ pub fn cancel(manager: &Arc<Manager>, package: &Package) {
     let (manager, package) = (manager.clone(), package.clone());
     tokio::spawn(async move {
         let Ok(repo) = manager.repo(&package.repo) else { return };
-        if package.job_id.is_empty() || repo.repo.runner.is_empty() {
+        let node = Manager::node_of(&package, &repo.repo);
+        if package.job_id.is_empty() || node.is_empty() {
             return;
         }
-        let node = repo.repo.runner;
         for (method, params) in [(runner::methods::STOP, json!({"job_id": package.job_id, "attempt": package.attempt})), (runner::methods::REMOVE, json!({"job_id": package.job_id}))] {
             if let Err(error) = manager.runner::<Value>(&node, method, params, RUNNER_CALL).await {
                 tracing::warn!(package = %package.id, method, error = %error.message, "the runner did not take the withdrawal");

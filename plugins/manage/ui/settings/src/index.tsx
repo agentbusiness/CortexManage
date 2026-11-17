@@ -33,6 +33,8 @@ interface Draft {
   url: string;
   main: string;
   changes: string;
+  commitName: string;
+  commitEmail: string;
   runner: string;
   runner_name: string;
   managed: boolean;
@@ -53,6 +55,8 @@ function draftOf(repo: Repo): Draft {
     url: repo.source.url,
     main: repo.source.main,
     changes: repo.source.changes || 'none',
+    commitName: repo.source.commit_name ?? '',
+    commitEmail: repo.source.commit_email ?? '',
     runner: repo.runner,
     runner_name: repo.runner_name,
     managed: repo.managed,
@@ -155,7 +159,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
       const after = await client.call<Repo>('manage.repo.edit', {
         id: repo.id,
         name: draft.name.trim(),
-        source: { kind: repo.source.kind || 'git', url: draft.url.trim(), main: draft.main.trim(), changes: draft.changes },
+        source: { kind: repo.source.kind || 'git', url: draft.url.trim(), main: draft.main.trim(), changes: draft.changes, commit_name: draft.commitName.trim(), commit_email: draft.commitEmail.trim() },
         runner: draft.runner,
         runner_name: draft.runner_name,
         policy,
@@ -172,7 +176,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
   };
 
   const runnerItems = [
-    { key: '', label: 'This computer', selected: draft.runner === '', onSelect: () => set({ runner: '', runner_name: '' }) },
+    { key: '', label: 'Any free CortexCode', selected: draft.runner === '', onSelect: () => set({ runner: '', runner_name: '' }) },
     ...(peers.data ?? []).map((peer) => ({
       key: peer.member.node,
       label: peer.member.name,
@@ -195,9 +199,15 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
       <span className="cm-set-cell"><label className="field"><input value={draft.url} aria-label="Git URL" onChange={(event) => set({ url: event.target.value })} /></label></span>
       <span className="ap">Main branch</span>
       <span className="cm-set-cell"><label className="field"><input value={draft.main} aria-label="Main branch" onChange={(event) => set({ main: event.target.value })} /></label></span>
+      <span className="ap">Commits as</span>
+      <span className="cm-set-cell">
+        <label className="field"><input value={draft.commitName} placeholder="Name" aria-label="Name the commits are made as" onChange={(event) => set({ commitName: event.target.value })} /></label>
+        <label className="field"><input value={draft.commitEmail} placeholder="Email" aria-label="Email the commits are made as" onChange={(event) => set({ commitEmail: event.target.value })} /></label>
+      </span>
+
       <span className="ap">Builds on</span>
       <span className="cm-set-cell">
-        <Menu label="Computer" value={draft.runner ? draft.runner_name || draft.runner : 'this computer'} items={runnerItems} />
+        <Menu label="Computer" value={draft.runner ? draft.runner_name || draft.runner : 'any free CortexCode'} items={runnerItems} />
         {peers.error && !peers.data && (
           <span className="cm-set-note">The other computers cannot be listed: {peers.errorCode === 'unavailable' ? 'the mesh is not running' : peers.error}.</span>
         )}

@@ -79,7 +79,7 @@ pub async fn run(manager: &Arc<Manager>, package_id: &str, facts: &Facts, which:
     let Ok(package) = manager.package(package_id) else { return outcome };
     let Ok(repo) = manager.repo(&package.repo) else { return outcome };
     let repo = repo.repo;
-    let node = repo.runner.clone();
+    let node = Manager::node_of(&package, &repo);
     let app = job::app_of(&repo);
     let (points, originals) = manager.store.read(|data| {
         let points = packages::joined(data, &package);
