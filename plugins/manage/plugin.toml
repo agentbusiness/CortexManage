@@ -32,7 +32,7 @@ subscribes = ["plugin.state", "plugin.swapped", "train.released"]
 uses = [
   "memory.graph.put", "memory.graph.retire", "memory.graph.query", "memory.graph.machine",
   "frame.project.open", "frame.session.create", "frame.session.update", "frame.journal.append", "frame.journal.patch",
-  "mesh.link",
+  "mesh.link", "mesh.peers",
   "chatflow-manage.assess", "chatflow-manage.match", "chatflow-manage.plan", "chatflow-manage.validate",
   "chatflow-manage.drift", "chatflow-manage.converge", "chatflow-manage.digest", "chatflow-manage.why",
   "charter.get", "charter.rules_for", "charter.check",

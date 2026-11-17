@@ -264,10 +264,12 @@ pub fn special(manager: &Manager, package: &Package) -> (bool, bool) {
 async fn start(manager: &Arc<Manager>, id: &str) -> Result<(), Fail> {
     let package = manager.package(id).map_err(|error| Fail::Ask(error.message))?;
     let repo = manager.repo(&package.repo).map_err(|error| Fail::Ask(error.message))?.repo;
-    if repo.runner.is_empty() {
-        return Err(Fail::Ask(manager.t("no_runner", &[])));
-    }
-    let node = repo.runner.clone();
+    // "This computer": the CortexCode here, started when it is not running (then: wait for it).
+    let node = match manager.runner_of(&repo).await {
+        Ok(node) => node,
+        Err(error) if error.code == codes::UNAVAILABLE => return Err(Fail::Wait("runner.start", error)),
+        Err(error) => return Err(Fail::Ask(error.message)),
+    };
     let on_runner = |error: RpcError| if away(&error) { Fail::Wait("runner.prepare", error) } else { Fail::Ask(error.message) };
     let (points, first_title, goal, approach) = manager.store.read(|data| {
         let first = package.requests.first().cloned().unwrap_or_default();

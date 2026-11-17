@@ -34,6 +34,10 @@ use tokio::sync::{Notify, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 /// How often the clock looks at the wall time (holds that ended, beats that stopped).
+/// What CortexCode says its app is on its mesh card, and the identifier macOS starts it by.
+const RUNNER_SOFTWARE: &str = "cortexcode";
+const RUNNER_BUNDLE: &str = "ai.cortexcode.app";
+
 const TICK: Duration = Duration::from_secs(15);
 /// Something that waits for a plugin is tried again after this long, whatever events say.
 const RETRY_AFTER_MS: u64 = 10 * 60_000;
@@ -430,11 +434,46 @@ impl Manager {
     }
 
     /// The repository's runner node, or a plain error when it has none.
-    fn runner_of(&self, repo: &Repo) -> Result<String, RpcError> {
-        if repo.runner.is_empty() {
-            return Err(RpcError::new(codes::UNAVAILABLE, self.t("no_runner", &[])));
+    /// The computer that builds a repository: the one set for it, or, when none is set ("this
+    /// computer"), the CortexCode running here. That one is found by what it declares (a member of
+    /// the mesh on this computer whose card says its app is CortexCode, and that answers
+    /// `runner.list`), is remembered for the repository, and is started when it is not running.
+    pub async fn runner_of(&self, repo: &Repo) -> Result<String, RpcError> {
+        if !repo.runner.is_empty() {
+            return Ok(repo.runner.clone());
         }
-        Ok(repo.runner.clone())
+        let peers: Value = self.peer("mesh.peers", json!({})).await?;
+        let mut here = 0;
+        for peer in peers.get("peers").and_then(Value::as_array).into_iter().flatten() {
+            let local = peer.pointer("/member/local").and_then(Value::as_bool) == Some(true);
+            let software = peer.pointer("/card/software").and_then(Value::as_str) == Some(RUNNER_SOFTWARE);
+            let node = peer.pointer("/member/node").and_then(Value::as_str).unwrap_or_default();
+            if !local || !software || node.is_empty() {
+                continue;
+            }
+            here += 1;
+            self.links.ensure(self.ctx()?, node);
+            if self.runner::<Value>(node, runner::methods::LIST, json!({}), Duration::from_secs(10)).await.is_ok() {
+                let node = node.to_owned();
+                self.store.update_repo(&repo.id, |rec| {
+                    rec.repo.runner = node.clone();
+                    rec.repo.runner_name = self.t("runner_here", &[]);
+                });
+                self.changed("repo", &repo.id, &repo.id);
+                return Ok(node);
+            }
+        }
+        if here > 0 {
+            // CortexCode runs here but does not answer as a runner: it has no runner part yet.
+            return Err(RpcError::new(codes::CONFLICT, self.t("runner_no_part", &[])));
+        }
+        // Not running: start it by its own identifier, in the background. The next look finds it.
+        let started = tokio::task::spawn_blocking(|| std::process::Command::new("/usr/bin/open").args(["-g", "-b", RUNNER_BUNDLE]).status().is_ok_and(|status| status.success())).await.unwrap_or(false);
+        if started {
+            Err(RpcError::new(codes::UNAVAILABLE, self.t("runner_starting", &[])))
+        } else {
+            Err(RpcError::new(codes::CONFLICT, self.t("runner_not_installed", &[])))
+        }
     }
 
     /// The frame project a repository's sessions live under (`<home>/repos/<id>`), opened when
@@ -812,7 +851,7 @@ impl Manager {
 
     async fn discover(&self, method: &str, params: DiscoverParams) -> Result<Value, RpcError> {
         let repo = self.repo(&params.repo)?.repo;
-        let node = self.runner_of(&repo)?;
+        let node = self.runner_of(&repo).await?;
         let (method, params) = match method {
             methods::DISCOVER_READ => (runner::methods::READ, json!(runner::ReadParams { repo: repo.id.clone(), path: params.path, from: params.from, lines: params.lines })),
             methods::DISCOVER_SEARCH => (runner::methods::SEARCH, json!(runner::SearchParams { repo: repo.id.clone(), text: params.text, under: params.under, limit: params.limit })),
@@ -823,7 +862,7 @@ impl Manager {
 
     async fn runner_release(&self, params: Value) -> Result<Value, RpcError> {
         let repo = self.repo(params.get("repo").and_then(Value::as_str).unwrap_or_default())?.repo;
-        let node = self.runner_of(&repo)?;
+        let node = self.runner_of(&repo).await?;
         let plan_only = params.get("plan_only").and_then(Value::as_bool).unwrap_or(false);
         let release = runner::ReleaseParams { repo: repo.id.clone(), url: repo.source.url.clone(), main: repo.source.main.clone(), plan_only };
         let answer: runner::ReleaseAnswer = self.runner(&node, runner::methods::RELEASE, json!(release), RUNNER_BUILD).await?;
