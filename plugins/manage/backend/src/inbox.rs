@@ -231,6 +231,23 @@ fn clock(ms: u64) -> String {
 pub fn list(manager: &Manager) -> Inbox {
     manager.store.read(|data| {
         let mut asks: Vec<Ask> = data.open_asks().map(|rec| rec.ask.clone()).collect();
+        // A request whose plan has a question for the person waits on them too: it is listed and
+        // counted with the asks, and pressing it opens its session, where the question is answered.
+        for rec in data.requests.values().filter(|rec| rec.r.stage == stage::CLARIFYING && rec.r.ended_as.is_empty()) {
+            let question = rec.r.questions.iter().find(|question| question.answer.is_empty()).or(rec.r.questions.first());
+            asks.push(Ask {
+                id: format!("clarify:{}", rec.r.id),
+                kind: "clarify".into(),
+                repo: rec.r.repo.clone(),
+                request: rec.r.id.clone(),
+                package: rec.r.package.clone(),
+                title: rec.r.title.clone(),
+                subject: manager.t("ask_clarify", &[]),
+                why: question.map(|question| question.text.clone()).unwrap_or_default(),
+                since_ms: rec.r.created_ms,
+                ..Ask::default()
+            });
+        }
         asks.sort_by_key(|ask| ask.since_ms);
         let title = |package: &cc_protocol::contracts::manage::Package| {
             let first = package.requests.first().and_then(|id| data.requests.get(id)).map(|rec| rec.r.title.clone()).unwrap_or_default();
