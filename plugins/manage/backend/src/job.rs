@@ -713,7 +713,8 @@ impl Actor {
     fn strip(&self, package: &Package) -> Option<Strip> {
         let facts = self.facts.as_ref()?;
         let policy = self.m.store.read(|data| data.repos.get(&package.repo).map(|rec| rec.repo.policy.clone())).unwrap_or_default();
-        let budget = policy::budget(&policy, package.tier);
+        // The one guard every job has: its longest time (size has no limit).
+        let budget = policy::budget(&policy, Tier::Major);
         Some(Strip {
             task: facts.task,
             tasks: facts.tasks,
@@ -721,7 +722,7 @@ impl Actor {
             checkpoint_ms: facts.checkpoints.iter().map(|checkpoint| checkpoint.ms).max().unwrap_or(0),
             files: facts.total_files,
             lines: facts.total_lines,
-            limit_lines: budget[2],
+            limit_lines: 0,
             in_scope: facts.out_of_scope.is_empty(),
             minutes: facts.minutes,
             limit_minutes: budget[0],
@@ -983,22 +984,19 @@ impl Actor {
         let (standard_change, charter_change) = special(&self.m, &package);
         let task = facts.task.max(1);
         let next = self.title(task);
-        let budget = policy::budget(&repo.policy, package.tier);
-
-        // W7: the budget is passed. The job stops and a person decides.
-        if facts.minutes > budget[0] || facts.tokens > budget[1] || u64::from(facts.total_lines) > budget[2] {
+        // W7: a runaway guard, the same for every job: the longest time and the most tokens the
+        // policy allows any job. How many lines a change has says nothing about how safe it is,
+        // so size stops nothing and changes no rating.
+        let limit = policy::budget(&repo.policy, Tier::Major);
+        if facts.minutes > limit[0] || facts.tokens > limit[1] {
             let fact = self.m.t(
                 "fact_w7",
-                &[
-                    ("minutes", &facts.minutes.to_string()),
-                    ("limit_minutes", &budget[0].to_string()),
-                    ("tokens", &facts.tokens.to_string()),
-                    ("limit_tokens", &budget[1].to_string()),
-                    ("lines", &facts.total_lines.to_string()),
-                    ("limit_lines", &budget[2].to_string()),
-                ],
+                &[("minutes", &facts.minutes.to_string()), ("limit_minutes", &limit[0].to_string()), ("tokens", &facts.tokens.to_string()), ("limit_tokens", &limit[1].to_string())],
             );
-            self.stop_and_ask("W7", task, &fact).await;
+            self.stop_job().await;
+            self.intervene("W7", &fact, "stop", "", task).await;
+            let detail = self.m.t("detail_budget", &[("task", &self.title(task)), ("fact", &fact)]);
+            self.ask("stuck", "subject_stuck", &detail, &["rerun", "take_over", "decline"], &format!("task:{task}")).await;
             return;
         }
         // W5: a protected file changed in a job that may not change it. No steer: the checkpoint

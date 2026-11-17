@@ -247,9 +247,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
         <NumberField label="Minor" value={draft.numbers.rework_minor} onChange={(value) => setNumber('rework_minor', value)} />
         <NumberField label="Major" value={draft.numbers.rework_major} onChange={(value) => setNumber('rework_major', value)} />
       </span>
-      {TIERS.map((tier) => (
-        <BudgetRow key={tier} tier={tier} values={draft.budgets[tier]} onChange={(index, value) => setBudget(tier, index, value)} />
-      ))}
+      <BudgetRow values={draft.budgets.major} onChange={(index, value) => setBudget('major', index, value)} />
       <span className="ap">Daily train</span>
       <span className="cm-set-cell">
         <label className="field t"><input value={draft.train_at} aria-label="Daily train, as HH:MM" placeholder="03:00" onChange={(event) => set({ train_at: event.target.value })} /></label>
@@ -280,14 +278,14 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
   );
 }
 
-function BudgetRow({ tier, values, onChange }: { tier: Tier; values: [string, string, string]; onChange: (index: number, value: string) => void }) {
+/** The runaway guard: the longest any job may run and the most tokens it may use. */
+function BudgetRow({ values, onChange }: { values: [string, string, string]; onChange: (index: number, value: string) => void }) {
   return (
     <>
-      <span className="ap">Budget, {tier}</span>
+      <span className="ap">A job stops after</span>
       <span className="cm-set-cell">
         <NumberField label="Minutes" value={values[0]} onChange={(value) => onChange(0, value)} />
         <NumberField label="Tokens" value={values[1]} onChange={(value) => onChange(1, value)} />
-        <NumberField label="Lines" value={values[2]} onChange={(value) => onChange(2, value)} />
       </span>
     </>
   );

@@ -426,6 +426,14 @@ async fn validate(manager: &Arc<Manager>, rec: &ReqRec, run: u64) -> bool {
             point.verdict_reason = manager.t("verdict_proven_together", &[("reason", &point.verdict_reason)]);
         }
     }
+    // A point the validator is not sure about is a person's to decide only in a major change.
+    // In any other the plan's own word stands: the point is kept.
+    if rec.r.tier != Tier::Major {
+        for point in plan_rec.plan.points.iter_mut().filter(|point| point.verdict == "ask") {
+            point.verdict = "keep".into();
+            point.verdict_reason = manager.t("verdict_kept_unsure", &[("reason", &point.verdict_reason)]);
+        }
+    }
     manager.settled(&format!("request:{id}"));
     manager.store.put_plan(id, plan_rec.clone());
     show_verdicts(manager, &session, &plan_rec).await;

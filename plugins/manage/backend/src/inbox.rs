@@ -8,7 +8,7 @@
 use crate::service::Manager;
 use crate::store::AskRec;
 use crate::{job, packages, pipeline};
-use cc_protocol::contracts::manage::{Ask, DecideParams, Going, Inbox, WhyAnswer, flow, kinds, stage};
+use cc_protocol::contracts::manage::{Ask, DecideParams, Going, Inbox, Tier, WhyAnswer, flow, kinds, stage};
 use cc_protocol::contracts::now_ms;
 use cc_protocol::{RpcError, codes};
 use serde_json::json;
@@ -77,6 +77,11 @@ pub async fn raise(manager: &Arc<Manager>, new: NewAsk) -> String {
     let rec = AskRec { ask: ask.clone(), open: true, other_request: new.other_request.clone(), resume: new.resume.clone(), ..AskRec::default() };
     manager.store.put_ask(rec.clone());
     manager.entry_all(&sessions(manager, &rec), kinds::ASK, json!({"ask": ask})).await;
+    if let Some(action) = own_answer(manager, &ask) {
+        // Not a major change: no person is asked. The answer is in the thread, as the policy's.
+        Box::pin(settle(manager, &rec, action, "policy", "")).await;
+        return id;
+    }
     manager.changed("inbox", &id, &new.repo);
     manager.notify("approval", &id, manager.t("notify_ask", &[("title", &ask.title)]), ask.why.clone(), repo_name(manager, &new.repo)).await;
     if !new.package.is_empty() {
@@ -149,20 +154,49 @@ pub async fn decide(manager: &Arc<Manager>, params: &DecideParams) -> Result<(),
     if !rec.ask.actions.contains(&params.action) {
         return Err(RpcError::invalid_params(format!("`{}` is not one of this decision's answers ({})", params.action, rec.ask.actions.join(", "))));
     }
+    settle(manager, &rec, &params.action, "person", params.note.trim()).await;
+    Ok(())
+}
+
+/// Close an ask with an answer and act on it. `by`: `person`, or `policy` when the manager
+/// answered it itself.
+async fn settle(manager: &Arc<Manager>, rec: &AskRec, action: &str, by: &str, note: &str) {
     let mut closed = rec.clone();
     closed.open = false;
-    closed.by = "person".into();
-    closed.action = params.action.clone();
-    closed.note = params.note.trim().to_owned();
+    closed.by = by.into();
+    closed.action = action.to_owned();
+    closed.note = note.to_owned();
     closed.answered_ms = now_ms();
     manager.store.put_ask(closed.clone());
-    manager.entry_all(&sessions(manager, &rec), kinds::ASK, json!({"ask_id": rec.ask.id, "action": params.action, "by": "person", "note": closed.note})).await;
+    manager.entry_all(&sessions(manager, rec), kinds::ASK, json!({"ask_id": rec.ask.id, "action": action, "by": by, "note": closed.note})).await;
     act(manager, &closed).await;
     manager.changed("inbox", &rec.ask.id, &rec.ask.repo);
     if !rec.ask.package.is_empty() {
         manager.changed("package", &rec.ask.package, &rec.ask.repo);
     }
-    Ok(())
+}
+
+/// What the manager answers itself, for a change that is not major (a person is asked only about
+/// a major change): a walk nothing could perform does not hold the landing back; a stuck job is
+/// tried once more and then ended; of two requests that contradict, the newer is kept.
+fn own_answer(manager: &Manager, ask: &Ask) -> Option<&'static str> {
+    let (tier, attempt) = manager.store.read(|data| {
+        let package = data.packages.get(&ask.package);
+        let tier = package.map(|package| package.tier).or_else(|| data.requests.get(&ask.request).map(|rec| rec.r.tier))?;
+        Some((tier, package.map(|package| package.attempt).unwrap_or(0)))
+    })?;
+    if tier == Tier::Major {
+        return None;
+    }
+    let wanted = match ask.kind.as_str() {
+        "blocked_walk" => "approve",
+        "stuck" if attempt < 2 => "rerun",
+        "stuck" => "decline",
+        // The newer request is what the person wants now.
+        "contradiction" => "second",
+        _ => return None,
+    };
+    ask.actions.iter().any(|action| action == wanted).then_some(wanted)
 }
 
 /// What an answer sets going.

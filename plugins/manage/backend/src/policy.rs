@@ -5,10 +5,6 @@
 use crate::texts::Texts;
 use cc_protocol::contracts::manage::{Point, Policy, Tier};
 
-/// More points than this make a change major (CortexCode's plan limit).
-pub const MAX_POINTS: usize = 12;
-/// More limit lines than this in one plan make a change major.
-pub const MAX_LINES: u32 = 2500;
 /// How many reasons of one sort are written out; the rest are counted.
 const REASONS: usize = 4;
 
@@ -94,7 +90,8 @@ fn name_some(texts: &Texts, key: &str, paths: &[String]) -> Vec<String> {
 }
 
 /// The tier's floor of a plan: from its kept points' scopes against the policy's paths, from the
-/// standard paths among them (`standard`, as the standard plugin answered), and from its size.
+/// standard paths among them (`standard`, as the standard plugin answered). How big a plan is
+/// says nothing about what it changes, so size raises nothing.
 pub fn floor(policy: &Policy, points: &[Point], standard: &[String], texts: &Texts) -> Floor {
     let mut touches: Vec<String> = points.iter().flat_map(|point| point.touches.iter().cloned()).collect();
     touches.sort();
@@ -102,7 +99,6 @@ pub fn floor(policy: &Policy, points: &[Point], standard: &[String], texts: &Tex
     let hit = |globs: &[String]| -> Vec<String> { touches.iter().filter(|touch| globs.iter().any(|glob| touch_hits(glob, touch))).cloned().collect() };
     let major = hit(&policy.major_paths);
     let minor: Vec<String> = hit(&policy.minor_paths).into_iter().filter(|path| !major.contains(path)).collect();
-    let lines: u32 = points.iter().map(|point| point.limit_lines).sum();
 
     let mut tier = Tier::Safe;
     let mut reasons = Vec::new();
@@ -113,14 +109,6 @@ pub fn floor(policy: &Policy, points: &[Point], standard: &[String], texts: &Tex
     if !standard.is_empty() {
         tier = Tier::Major;
         reasons.extend(name_some(texts, "reason_standard", standard));
-    }
-    if points.len() > MAX_POINTS {
-        tier = Tier::Major;
-        reasons.push(texts.get("reason_many_points", &[("count", &points.len().to_string()), ("limit", &MAX_POINTS.to_string())]));
-    }
-    if lines > MAX_LINES {
-        tier = Tier::Major;
-        reasons.push(texts.get("reason_many_lines", &[("count", &lines.to_string()), ("limit", &MAX_LINES.to_string())]));
     }
     if !minor.is_empty() {
         tier = tier.max(Tier::Minor);

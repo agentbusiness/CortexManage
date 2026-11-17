@@ -144,7 +144,6 @@ pub async fn place(manager: &Arc<Manager>, id: &str) {
                     let members = package.requests.iter().filter_map(|id| data.requests.get(id).cloned()).collect();
                     (package.clone(), points, members)
                 })
-                .filter(|(_, points, _)| points.len() + kept.len() <= policy::MAX_POINTS)
                 .collect()
         });
         // Code first: plans that touch the same files would collide on landing.

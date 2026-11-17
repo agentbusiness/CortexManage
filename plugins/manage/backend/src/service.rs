@@ -966,7 +966,7 @@ impl Manager {
             ("the protocol is major", vec![point(&["protocol/src/contracts/mesh.rs"], 40)], vec![], Tier::Major),
             ("a pairing file is major wherever it is", vec![point(&["plugins/mesh/backend/src/pairing.rs"], 40)], vec![], Tier::Major),
             ("a standard path is major", vec![point(&["plugins/theme-cortex/ui/theme/src/x.css"], 10)], vec!["plugins/theme-cortex/ui/theme/src/x.css".into()], Tier::Major),
-            ("more than 2500 lines is major", vec![point(&["plugins/mesh/backend/src/a.rs"], 1500), point(&["plugins/mesh/backend/src/b.rs"], 1200)], vec![], Tier::Major),
+            ("a big change in safe files is still safe", vec![point(&["plugins/mesh/backend/src/a.rs"], 1500), point(&["plugins/mesh/backend/src/b.rs"], 1200)], vec![], Tier::Safe),
         ];
         let wrong: Vec<String> = cases
             .iter()
@@ -976,7 +976,8 @@ impl Manager {
             })
             .collect();
         let many: Vec<Point> = (0..13).map(|n| Point { n, ..point(&["plugins/mesh/backend/src/a.rs"], 10) }).collect();
-        let many_ok = policy::floor(&policy, &many, &[], &self.texts).tier == Tier::Major;
+        // Many points in safe files: still safe. Size raises nothing.
+        let many_ok = policy::floor(&policy, &many, &[], &self.texts).tier == Tier::Safe;
         check("policy.floor", wrong.is_empty() && many_ok, if wrong.is_empty() { format!("{} cases", cases.len() + 1) } else { wrong.join("; ") }, started);
 
         let started = std::time::Instant::now();
