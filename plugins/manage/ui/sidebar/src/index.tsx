@@ -4,12 +4,11 @@
  * repositories, and under each its open requests: a package of several requests is a bracket
  * around them. Below, under its own heading, the shared standard, only when the person's
  * repositories carry one.
- * Pressing a repository's name opens its page; pressing a request opens its session. At the foot,
- * the model in two lines: which one, and whether it is ready, loading, downloading or in use.
+ * Pressing a repository's name opens its page; pressing a request opens its session.
  */
 
 import { useState } from 'react';
-import { Cross, definePlugin, installLine, useModelState, useNow, useQuery, type Client } from '@cortex/sdk';
+import { Cross, definePlugin, useNow, useQuery, type Client } from '@cortex/sdk';
 import {
   CHANGED,
   STAGE_LABEL,
@@ -179,34 +178,6 @@ function SharedStandard({ selection, open }: { selection: Selection; open: (next
   );
 }
 
-interface Slots { slots: Array<{ busy: boolean }>; queued: number }
-
-/** The model, at the foot: its name, then one plain line of what it is doing. Nothing while the
- * app does not know of a model yet. */
-function ModelLine() {
-  const state = useModelState();
-  const slots = useQuery<Slots>('model.slots', (client) => client.call<Slots>('model.slots', {}), { topics: ['model.progress', 'model.state'] });
-  const name = state.info.data?.variant ?? state.variant;
-  const downloading = installLine(state.install);
-  let line: string;
-  if (downloading) line = downloading;
-  else if (state.phase === 'loading' || state.phase === 'starting') line = 'Loading into memory…';
-  else if (state.phase === 'failed') line = `Did not load: ${state.reason ?? 'no reason given'}`;
-  else if (state.phase === 'unavailable') line = 'No model is running. Requests wait until one is.';
-  else if (state.phase === 'ready') {
-    const busy = (slots.data?.slots ?? []).filter((slot) => slot.busy).length;
-    const queued = slots.data?.queued ?? 0;
-    line = busy === 0 ? 'Ready' : `Working on ${busy} ${busy === 1 ? 'question' : 'questions'}${queued > 0 ? `, ${queued} waiting` : ''}`;
-  } else return null;
-  return (
-    <div className="cm-side-foot" data-model={state.phase} title="The model that rates, plans and answers. Settings > Model has the details.">
-      <span className="ap faint">Model</span>
-      {name && <span className="cm-model-name">{name}</span>}
-      <span className={`cm-model-line${state.phase === 'ready' ? '' : ' live'}`}>{line}</span>
-    </div>
-  );
-}
-
 function Sidebar() {
   const repos = useRepos();
   const [selection, setSelection] = useManageSelection();
@@ -234,7 +205,6 @@ function Sidebar() {
         {list.map((repo, index) => <RepoBlock key={repo.id} repo={repo} index={index} selection={selection} open={setSelection} now={now} />)}
         <SharedStandard selection={selection} open={setSelection} />
       </div>
-      <ModelLine />
     </div>
   );
 }
