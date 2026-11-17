@@ -142,6 +142,15 @@ impl Manager {
         }
     }
 
+    /// Tell the person through the notify plugin (macOS notification, or the window while it is
+    /// open). Best effort: a notification that cannot be sent changes nothing else.
+    pub async fn notify(&self, kind: &str, key: &str, title: String, body: String, subtitle: String) {
+        let notification = json!({"kind": kind, "title": title, "body": body, "key": key, "subtitle": subtitle, "target": {"open": "manage", "id": key}, "actions": []});
+        if let Err(error) = self.peer::<Value>("notify.send", notification).await {
+            tracing::debug!(error = %error.message, "the notification was not sent");
+        }
+    }
+
     /// Append an entry to a request's thread. 0 when the frame refused it (logged).
     pub async fn entry(&self, session: &str, kind: &str, data: Value) -> u64 {
         if session.is_empty() {

@@ -157,6 +157,11 @@ proof_walks_blocked = "Walks: {passed} passed, {failed} failed, {blocked} could 
 proof_converge = "The diff does the plan and nothing else."
 
 # ---- the inbox ---------------------------------------------------------------------------------------------
+# ---- notifications ---------------------------------------------------------------------------------
+notify_ask = "Waits on you: {title}"
+notify_landed = "Landed: {id}"
+notify_landed_body = "Its checks, build and walks passed. It is on the main branch as {commit}."
+
 count_building = "{count} building"
 count_held = "{count} held"
 going_builds = "builds {time}"

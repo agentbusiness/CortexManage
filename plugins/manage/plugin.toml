@@ -38,6 +38,7 @@ uses = [
   "charter.get", "charter.rules_for", "charter.check",
   "standard.touches", "standard.paths",
   "train.landed",
+  "notify.send",
 ]
 
 # UI packages: one npm workspace rooted at ui/ (own package-lock.json); each package builds

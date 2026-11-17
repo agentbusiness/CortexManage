@@ -10,7 +10,8 @@
 # of a name already published, so raise this whenever what electron_mac_branded makes changes.
 # 2: the first archives published kept "Electron Helper".
 # 3: Resources/app, so a start from a kept Dock icon opens the app instead of Electron's default window.
-ELECTRON_BRANDING=3
+# 4: the window has its own bundle identifier (notifications showed another app's icon).
+ELECTRON_BRANDING=4
 
 electron_mac_branded() {
   local src="$1" dst="$2" icns="$3"
@@ -42,6 +43,9 @@ electron_mac_branded() {
   # kept in the Dock (which keeps this bundle, not the app), it opens the app and quits.
   local launcher="$dst/dist/CortexManage.app/Contents/Resources/app" bundle_id
   bundle_id="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$repo/scripts/app/Info.plist")" || return 1
+  # The window's own identifier: macOS keeps notification settings and their icon per identifier,
+  # and Electron's own (com.github.Electron) is shared by every app built on it.
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${bundle_id%.app}.window" "$dst/dist/CortexManage.app/Contents/Info.plist" || return 1
   mkdir -p "$launcher"
   printf '{"name":"cortexmanage-launcher","main":"main.js","type":"module"}\n' > "$launcher/package.json"
   sed "s/@BUNDLE_ID@/$bundle_id/" > "$launcher/main.js" <<'JS'

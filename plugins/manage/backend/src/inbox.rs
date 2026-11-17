@@ -78,6 +78,7 @@ pub async fn raise(manager: &Arc<Manager>, new: NewAsk) -> String {
     manager.store.put_ask(rec.clone());
     manager.entry_all(&sessions(manager, &rec), kinds::ASK, json!({"ask": ask})).await;
     manager.changed("inbox", &id, &new.repo);
+    manager.notify("approval", &id, manager.t("notify_ask", &[("title", &ask.title)]), ask.why.clone(), repo_name(manager, &new.repo)).await;
     if !new.package.is_empty() {
         manager.changed("package", &new.package, &new.repo);
     }
@@ -271,4 +272,9 @@ pub fn list(manager: &Manager) -> Inbox {
         let count_line = parts.join(" · ");
         Inbox { asks, going, count_line }
     })
+}
+
+/// A repository's name for a notification's second line; its id when it is not known.
+fn repo_name(manager: &Arc<Manager>, id: &str) -> String {
+    manager.repo(id).map(|rec| rec.repo.name).unwrap_or_else(|_| id.to_owned())
 }

@@ -1478,6 +1478,7 @@ impl Actor {
         });
         inbox::close_where(&self.m, "policy", "landed", |ask| ask.ask.package == self.id);
         set_stage(&self.m, &self.id, stage::LANDED).await;
+        self.m.notify("done", &self.id, self.m.t("notify_landed", &[("id", &self.id)]), self.m.t("notify_landed_body", &[("commit", commit)]), repo.name.clone()).await;
         // The soak build installs the package's parts into the owner's own apps. A failure is
         // written down; the package has landed all the same.
         let build = runner::BuildParams { job_id: package.job_id.clone(), attempt: package.attempt, app: app_of(&repo), parts: Vec::new(), soak: true };
