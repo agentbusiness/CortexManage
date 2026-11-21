@@ -7,7 +7,7 @@
 [plugin]
 id = "theme-cortex"
 name = "Cortex theme"
-version = "0.1.9"
+version = "0.1.10"
 description = "CortexManage's design language: tokens for both grounds, the bundled faces, base and component styles, and the derived CodeMirror and xterm themes."
 license = "UNLICENSED"
 platforms = ["macos", "linux"]
