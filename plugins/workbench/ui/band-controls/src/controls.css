@@ -1,4 +1,5 @@
 #cc .cx-band-controls{display:flex;align-items:center;gap:8px;min-width:0;}
 #cc .cx-pane-open{flex:0 0 auto;}
-#cc .cx-band-gear{display:inline-flex;align-items:center;justify-content:center;flex:0 0 24px;width:24px;height:24px;padding:0;}
-#cc .cx-band-gear svg{width:13px;height:13px;}
+/* A detent's own height (22px), square, so it lines up with Pause and Close pane. */
+#cc .cx-band-gear{display:inline-flex;align-items:center;justify-content:center;flex:0 0 22px;width:22px;height:22px;padding:0;box-sizing:border-box;}
+#cc .cx-band-gear svg{width:12px;height:12px;display:block;}

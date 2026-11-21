@@ -33,6 +33,8 @@ pub mod mesh;
 pub mod model;
 #[cfg(feature = "notify")]
 pub mod notify;
+#[cfg(feature = "reports")]
+pub mod reports;
 #[cfg(feature = "research")]
 pub mod research;
 #[cfg(feature = "schedule")]
@@ -81,6 +83,7 @@ pub const CATEGORIES: &[(&str, &str)] = &[
     ("update", "update@1"),
     ("mesh", "mesh@1"),
     ("schedule", "schedule@1"),
+    ("stats", "stats@1"),
     // CortexManage:
     ("manage", "manage@1"),
     ("charter", "charter@1"),

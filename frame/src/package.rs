@@ -98,7 +98,8 @@ pub fn versions(root: &Path, id: &str) -> Vec<String> {
 }
 
 /// Unpack `archive` into the store. A version already stored is replaced unless it is one of
-/// `in_use` (then the install is refused: a running version never changes under its process).
+/// `in_use`: then the stored copy is taken when the version carries its build tag (the same build),
+/// and the install is refused otherwise (a running version never changes under its process).
 pub fn install_archive(root: &Path, archive: &Path, in_use: &dyn Fn(&str, &str) -> bool) -> Result<Installed, String> {
     std::fs::create_dir_all(root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
     let staging = root.join(format!(".staging-{}", uuid::Uuid::new_v4().simple()));
@@ -115,6 +116,12 @@ pub fn install_archive(root: &Path, archive: &Path, in_use: &dyn Fn(&str, &str) 
         let dir = root.join(&id).join(&version);
         if dir.exists() {
             if in_use(&id, &version) {
+                // A version with its build tag names one build: the stored copy is this package,
+                // and it is taken as it is.
+                if version.contains('+') && dir.join(PACKAGE_MANIFEST).is_file() {
+                    let _ = std::fs::remove_dir_all(&staging);
+                    return Ok(Installed { dir, manifest });
+                }
                 return Err(format!("{id} {version} is installed and in use; give the new build another version"));
             }
             std::fs::remove_dir_all(&dir).map_err(|e| format!("cannot replace {}: {e}", dir.display()))?;

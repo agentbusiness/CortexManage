@@ -17,7 +17,7 @@ dir = "backend"
 build = ["cargo", "build", "--release"]
 exec = "backend/target/release/cc-chatflow-manage"
 provides = [
-  "chatflow-manage.turn", "chatflow-manage.steer", "chatflow-manage.cancel", "chatflow-manage.state", "chatflow-manage.running",
+  "chatflow-manage.turn", "chatflow-manage.steer", "chatflow-manage.cancel", "chatflow-manage.state", "chatflow-manage.running", "chatflow-manage.attachment.put",
   "chatflow-manage.assess", "chatflow-manage.match", "chatflow-manage.plan", "chatflow-manage.validate",
   "chatflow-manage.drift", "chatflow-manage.converge", "chatflow-manage.digest", "chatflow-manage.why",
 ]

@@ -357,7 +357,6 @@ pub fn read_plan(value: &Value, request: &str, tier: Tier, data: &Data) -> Resul
                 break;
             }
         }
-        let limit = |field: &str| task.get(field).and_then(Value::as_u64).map(|value| value.min(u64::from(u32::MAX)) as u32).unwrap_or(0);
         points.push(Point {
             n,
             title,
@@ -365,14 +364,9 @@ pub fn read_plan(value: &Value, request: &str, tier: Tier, data: &Data) -> Resul
             known: texts_of(task, "known"),
             rules: texts_of(task, "rules"),
             depends_on,
-            limit_files: match limit("limit_files") {
-                0 => (touches.len() as u32).max(1),
-                files => files,
-            },
-            limit_lines: match limit("limit_lines") {
-                0 => data.limits.task_limit_lines,
-                lines => lines,
-            },
+            // No task has a size limit.
+            limit_files: 0,
+            limit_lines: 0,
             touches,
             checks: Vec::new(),
             walks,

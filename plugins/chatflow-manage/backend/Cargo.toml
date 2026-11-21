@@ -16,12 +16,16 @@ path = "src/main.rs"
 
 [dependencies]
 cc-protocol = { path = "../../../protocol", features = ["chatflow", "host", "manage", "mesh", "model"] }
+cc-stats-kit = { path = "../../../stats-kit" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 toml = "1.1.8"
 uuid = { version = "1.23", features = ["v4"] }
+# Attachments, stored as CortexCode stores them (content-addressed, base64 from the window).
+sha2 = "0.11.1"
+base64 = "0.23.1"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

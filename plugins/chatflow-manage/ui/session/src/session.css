@@ -79,13 +79,4 @@
 .cm-session .cm-composer{margin-top:0;border-top:1px solid var(--rule);padding:10px 18px 14px;}
 .cm-session .cm-composer .composer-h{min-height:17px;}
 .cm-session .cm-composer .composer-h:empty{display:none;}
-/* the composer as CortexCode's: one box, the field, then its controls inside it */
-#cc .cm-composer .cm-box{border:1px solid var(--rule-2);}
-#cc .cm-composer .cm-box:focus-within{border-color:var(--rubric);}
-#cc .cm-composer .cm-box .write{display:block;width:100%;border:0;padding-bottom:4px;}
-#cc .cm-composer .cm-tools{display:flex;align-items:center;gap:8px;margin:0;padding:0 8px 8px;}
-#cc .cm-composer .cm-tools .grow{flex:1;}
-#cc .cm-composer .cm-tools .detent.send{height:24px;padding:0 14px;background:var(--rubric);border-color:var(--rubric);color:var(--ground);}
-#cc .cm-composer .cm-tools .detent.send:hover{background:var(--rubric-lift);border-color:var(--rubric-lift);color:var(--ground);}
-#cc .cm-composer .cm-tools .detent.send:disabled{background:transparent;border-color:var(--rule);color:var(--ink-3);}
 #cc .cm-composer .inline-error{margin:0 0 8px;}

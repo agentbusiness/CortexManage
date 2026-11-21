@@ -16,6 +16,13 @@ body{overflow:hidden;}
 #cc .cx-work[data-pane="collapsed"]{grid-template-columns:var(--cx-left,248px) 1px minmax(0,1fr) 0 0;}
 #cc .cx-work[data-pane="collapsed"]>.cx-pane-divider{visibility:hidden;pointer-events:none;}
 #cc .cx-work[data-pane="collapsed"]>.cx-right>.cx-slot[data-slot="workbench.rightPane@1"]{display:none;}
+/* board: the sidebar takes the conversation's place; the conversation stays mounted, unseen, and
+   the right pane (when open) keeps a fixed width beside the board */
+#cc .cx-work[data-sidebar="board"]{grid-template-columns:minmax(0,1fr) 0 0 1px minmax(0,min(380px,40%));}
+#cc .cx-work[data-sidebar="board"][data-pane="collapsed"]{grid-template-columns:minmax(0,1fr) 0 0 0 0;}
+#cc .cx-work[data-sidebar="board"]>.cx-center{visibility:hidden;overflow:hidden;}
+#cc .cx-work[data-sidebar="board"]>.cx-divider{visibility:hidden;pointer-events:none;}
+#cc .cx-work[data-sidebar="board"]>.cx-pane-divider{visibility:visible;pointer-events:none;cursor:default;}
 #cc .cx-left,#cc .cx-center,#cc .cx-right{min-width:0;min-height:0;display:flex;flex-direction:column;position:relative;}
 #cc .cx-right{display:grid;grid-template-rows:minmax(0,1fr);}
 #cc .cx-left>.cx-slot,#cc .cx-center>.cx-slot{flex:1;min-height:0;}
@@ -26,6 +33,13 @@ body{overflow:hidden;}
 #cc .cx-slot>.cx-instance{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;}
 #cc .cx-band-item{flex:0 0 auto;flex-direction:row;align-items:center;}
 #cc .cx-band-item>.cx-instance{flex-direction:row;align-items:center;}
+/* Every band item is one 22px row (a detent's height), whatever plugin draws it, so every button
+   in the band starts on the same pixel and draws at the same height at any window zoom. */
+#cc .band .cx-band-item,#cc .band .cx-band-item>.cx-instance,#cc .band .cx-band-item>.cx-instance>*{height:22px;}
+/* The band is 44px with a 1px rule inside it: centring 22px in the 43px left puts every button on
+   a half pixel (10.5px), and its border smears over two rows. Placed at a whole 11px instead. */
+#cc .band>.cx-band-item{align-self:flex-start;margin-top:11px;}
+#cc .band .cx-band-item button{height:22px;box-sizing:border-box;}
 /* The band never carries a slot's waiting or vacancy text: it would push the window below. */
 #cc .cx-band-item>.cx-slot-empty,#cc .cx-band-item .cx-slot-failed{display:none;}
 #cc .cx-theme-slot{display:none;}

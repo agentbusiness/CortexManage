@@ -164,7 +164,7 @@ function Updates() {
     <>
       {band}
       {(showRound || ask || broke) && (
-      <div style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 89, width: 'min(400px, calc(100% - 32px))', maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 89, width: 'min(400px, calc(100% - 32px))', height: 'auto', maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       {showRound && <Round rows={rows} onHide={() => setHidden(signature)} />}
       {ask ? (
         <div className="sheet" role="dialog" aria-modal="false" aria-labelledby="updater-ask-title" style={{ width: '100%', minHeight: 0 }}>

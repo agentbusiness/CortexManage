@@ -15,7 +15,6 @@ Fill the plan's fields in this order:
    - `rules`: each thing the request says must hold that this task makes true, one line each in the request's own words ("an empty list gives only the header"). At most four: a part with more rules is two tasks. A rule is a check, never a method.
    - `depends_on`: the numbers of the earlier tasks it needs (tasks are numbered from 1 in the order written).
    - `touches`: the files or folders it may change. The builder is held to them, so name every one it needs and no other.
-   - `limit_files`: how many files it may change at most. `limit_lines`: how many lines it may add or remove at most. Tight, because a task that grows past them is stopped and looked at.
    - `walks`: how a person sees that the task works. Each walk:
      - `do`: the steps to take in the running app, in order ("Open the report page, press Export, choose CSV").
      - `see`: what is seen when it works ("A file is saved; its first line is the header").

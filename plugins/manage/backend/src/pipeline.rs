@@ -9,7 +9,7 @@
 
 use crate::service::{Manager, retitle};
 use crate::store::{PlanRec, ReqRec};
-use crate::{packages, policy};
+use crate::packages;
 use cc_protocol::RpcError;
 use cc_protocol::contracts::charter::{self, Charter, Rule};
 use cc_protocol::contracts::manage::{
@@ -159,7 +159,11 @@ async fn go(manager: &Arc<Manager>, id: &str, run: u64) {
         }
         let on = match rec.r.stage.as_str() {
             stage::ARRIVED => assess(manager, &rec, run).await,
-            stage::ASSESSED => plan(manager, &rec, run).await,
+            stage::ASSESSED => match packages::merge_same(manager, &rec).await {
+                // It was merged into an older request, or the chat flow did not answer.
+                Ok(true) | Err(()) => false,
+                Ok(false) => manager.is_current(id, run) && plan(manager, &rec, run).await,
+            },
             stage::PLANNED => validate(manager, &rec, run).await,
             stage::VALIDATED => {
                 packages::place(manager, id).await;
@@ -237,12 +241,10 @@ async fn assess(manager: &Arc<Manager>, rec: &ReqRec, run: u64) -> bool {
             }
             question.answer.clear();
         }
-        manager.store.update_request(id, |rec| rec.r.questions = questions.clone());
-        manager.store.set_stage(id, stage::CLARIFYING);
-        manager.entry(&session, kinds::CLARIFY, json!({"questions": questions})).await;
-        manager.line(&session, &manager.t("line_clarify", &[])).await;
-        manager.changed("request", id, &rec.r.repo);
-        return false;
+        // Nobody waits on a form: the questions are written down and the plan is made from what
+        // the request says. The person can add to it in the chat at any time.
+        let asked: Vec<String> = questions.iter().map(|question| question.text.clone()).collect();
+        manager.note(&session, &manager.t("note_open_questions", &[("questions", &asked.join(" "))])).await;
     }
     // The model's sentence for "urgent" must be in the request; one that is not counts as no.
     let quoted = !answer.urgent_because.trim().is_empty() && plain(&rec.r.text).contains(&plain(&answer.urgent_because));
@@ -532,33 +534,21 @@ pub async fn answered(manager: &Arc<Manager>, rec: &ReqRec) {
 async fn finish(manager: &Arc<Manager>, id: &str, run: u64) -> bool {
     let Ok(rec) = manager.request(id) else { return false };
     let session = rec.r.session_id.clone();
-    let Ok(repo) = manager.repo(&rec.r.repo) else { return false };
     let kept = manager.store.read(|data| data.kept(id));
     if kept.is_empty() {
         decline(manager, id, &manager.t("declined_nothing", &[])).await;
         return false;
     }
-    let mut touches: Vec<String> = kept.iter().flat_map(|point| point.touches.iter().cloned()).collect();
-    touches.sort();
-    touches.dedup();
-    let standard = match standard_touches(manager, &repo.repo, &touches).await {
-        Ok(paths) => paths,
-        Err(error) => {
-            manager.unavailable(&format!("request:{id}"), standard::methods::TOUCHES, &[session], &error).await;
-            return false;
-        }
-    };
     manager.settled(&format!("request:{id}"));
     if !manager.is_current(id, run) {
         return false;
     }
-    let floor = policy::floor(&repo.repo.policy, &kept, &standard, &manager.texts);
+    // The tier is the model's: how hard and how far-reaching the work is, never which folders it
+    // touches.
     let parts = parts_of(&kept);
     let Some(updated) = manager.store.update_request(id, |rec| {
-        rec.r.tier_floor = floor.tier;
-        let mut reasons = vec![manager.t("reason_model", &[("tier", rec.tier_model.as_str()), ("because", &rec.because)])];
-        reasons.extend(floor.reasons.iter().cloned());
-        rec.r.tier_reasons = reasons;
+        rec.r.tier_floor = Tier::Safe;
+        rec.r.tier_reasons = vec![manager.t("reason_model", &[("tier", rec.tier_model.as_str()), ("because", &rec.because)])];
         rec.r.parts = parts.clone();
         settle_urgent(rec);
     }) else {

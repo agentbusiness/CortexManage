@@ -57,6 +57,8 @@ export interface SharedState {
   'layout.sidebarCollapsed': boolean;
   /** The right pane is collapsed (only the card's toggle remains). */
   'layout.paneCollapsed': boolean;
+  /** The sidebar is unfolded over the whole work area (a board); the conversation is out of sight. */
+  'layout.board': boolean;
   /** Ids of plugins (verticals) this workbench disabled and the frame accepted. */
   'plugins.disabled': string[];
   /** An overlay (card, settings) covers part of the window: native views step back. */

@@ -13,7 +13,7 @@ note_failed = "The release did not finish. The packages stay ready for the next 
 note_plan_failed = "The release could not be planned. The packages stay ready for the next train."
 note_skipped = "This train was skipped."
 note_no_part = "Without a part release"
-note_unsoaked = "{part} also carries {package}, which has not finished its soak: the release script releases everything on the main line."
+note_unsoaked = "{part} also carries {package}, which is not ready yet: the release script releases everything on the main line."
 no_tail = "The release script gave no output."
 
 take_back_title = "Take back {package}"

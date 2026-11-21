@@ -19,7 +19,8 @@ name = "cc-manage"
 path = "src/main.rs"
 
 [dependencies]
-cc-protocol = { path = "../../../protocol", features = ["charter", "host", "manage", "memory", "mesh", "runner", "service", "standard", "train"] }
+cc-protocol = { path = "../../../protocol", features = ["charter", "host", "manage", "memory", "mesh", "reports", "runner", "service", "standard", "train"] }
+cc-stats-kit = { path = "../../../stats-kit" }
 # The local time of "builds 21:13".
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

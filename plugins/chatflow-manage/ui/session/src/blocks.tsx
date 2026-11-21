@@ -5,6 +5,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { clock, type JournalEntry } from '@cortex/sdk';
+import { Sent } from './Composer';
 import type { Ask, Finding, Plan, Point, Question, RequestView } from './types';
 
 type Data = JournalEntry['data'];
@@ -53,11 +54,13 @@ function Block({ pip, label, labelTone, aside, time, tone, children, seq }: {
 /** A person's message, or a line of the manager's. */
 export function Message({ entry, who, tone }: { entry: JournalEntry; who: string; tone?: 'live' }) {
   const text = str(entry.data.text);
-  if (!text) return null;
+  const files = entry.data.attachments;
+  if (!text && !(Array.isArray(files) && files.length > 0)) return null;
   return (
     <article className="msg" data-seq={entry.seq}>
       <div className={`who ap ${tone ?? 'faint'}`}>{who} · {clock(entry.ts_ms)}</div>
-      {text.split(/\n+/).map((line, index) => <p key={index}>{line}</p>)}
+      {text && text.split(/\n+/).map((line, index) => <p key={index}>{line}</p>)}
+      <Sent list={files} />
     </article>
   );
 }
@@ -171,10 +174,10 @@ function Task({ point, checks }: { point: Point; checks: boolean }) {
     <div className={`task${verdict === 'cut' ? ' cut' : ''}`}>
       <span className="kk">{point.n}</span>
       <span className="tt">{point.title}</span>
-      <span className={`v ${verdict}`}>{verdict ? capital(verdict) : ''}</span>
+      <span className={`v ${verdict}`}>{verdict === 'cut' ? 'Left out' : verdict === 'ask' ? 'Your call' : ''}</span>
       {walks.map((walk) => (
         <span className="ac" key={walk.id}>
-          <b>Walk</b>{walk.do} {walk.see}
+          <b>Check</b>{walk.do} → {walk.see}
           {walk.method === 'command' && walk.command && <> <code>{walk.command}</code></>}
         </span>
       ))}
@@ -190,16 +193,17 @@ export function PlanBlock({ entry }: { entry: JournalEntry }) {
   if (!plan || !Array.isArray(plan.points)) return null;
   const cut = plan.points.filter((point) => point.verdict === 'cut').length;
   const waiting = plan.points.filter((point) => point.verdict === 'ask').length;
-  const aside = [count(plan.points.length, 'point', 'points'), cut > 0 ? `validator cut ${cut}` : '', waiting > 0 ? `${waiting} for you to decide` : ''].filter(Boolean).join(' · ');
+  const kept = plan.points.length - cut;
+  const aside = [count(kept, 'step', 'steps'), cut > 0 ? `${cut} left out` : '', waiting > 0 ? `${waiting} for you to decide` : ''].filter(Boolean).join(' · ');
   const walks = plan.points.reduce((sum, point) => sum + (point.walks ?? []).length, 0);
   return (
-    <Block seq={entry.seq} pip="done" label={`Plan v${plan.version}`} aside={aside} time={entry.ts_ms}>
+    <Block seq={entry.seq} pip="done" label="Plan" aside={aside} time={entry.ts_ms}>
       {plan.goal && <p className="lead">{plan.goal}</p>}
       {plan.points.map((point) => <Task key={point.n} point={point} checks={checks} />)}
       {/* How each point will be proven is one press away, not in the way. */}
       {walks > 0 && (
         <p className="foot">
-          <button type="button" className="detent tiny" aria-expanded={checks} onClick={() => setChecks(!checks)}>{checks ? 'Hide the checks' : `How it is checked (${walks})`}</button>
+          <button type="button" className="detent tiny" aria-expanded={checks} onClick={() => setChecks(!checks)}>{checks ? 'Hide' : 'How we will know it works'}</button>
         </p>
       )}
       {checks && plan.architecture && <p className="foot sub">{plan.architecture}</p>}

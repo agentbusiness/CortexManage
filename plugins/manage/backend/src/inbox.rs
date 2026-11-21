@@ -239,6 +239,7 @@ async fn act(manager: &Arc<Manager>, rec: &AskRec) {
             // The job never started (no runner, or the workspace could not be made).
             match action {
                 "rerun" => manager.look_now(),
+                "give_back" => packages::give_back(manager, &package.id, if note.is_empty() { &ask.why } else { note }).await,
                 "take_over" => {
                     manager.store.update_package(&package.id, |package| package.stopped = true);
                 }
@@ -261,10 +262,30 @@ fn clock(ms: u64) -> String {
     }
 }
 
+/// Only a major change asks a person: approving its plan, approving its landing.
+pub fn asks_person(kind: &str) -> bool {
+    matches!(kind, "approve_plan" | "approve_landing")
+}
+
+/// At start: questions left open from before that rule are answered by it. Work that was stuck
+/// is planned again; a check nothing could run does not hold a landing; of two requests that
+/// contradict, the newer is kept.
+pub async fn settle_old(manager: &Arc<Manager>) {
+    let old: Vec<AskRec> = manager.store.read(|data| data.open_asks().filter(|rec| !asks_person(&rec.ask.kind)).cloned().collect());
+    for rec in old {
+        let action = match rec.ask.kind.as_str() {
+            "blocked_walk" => "approve",
+            "contradiction" => "second",
+            _ => "give_back",
+        };
+        settle(manager, &rec, action, "policy", "").await;
+    }
+}
+
 /// `manage.inbox.list`.
 pub fn list(manager: &Manager) -> Inbox {
     manager.store.read(|data| {
-        let mut asks: Vec<Ask> = data.open_asks().map(|rec| rec.ask.clone()).collect();
+        let mut asks: Vec<Ask> = data.open_asks().filter(|rec| asks_person(&rec.ask.kind)).map(|rec| rec.ask.clone()).collect();
         // A request whose plan has a question for the person waits on them too: it is listed and
         // counted with the asks, and pressing it opens its session, where the question is answered.
         for rec in data.requests.values().filter(|rec| rec.r.stage == stage::CLARIFYING && rec.r.ended_as.is_empty()) {

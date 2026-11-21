@@ -1,28 +1,23 @@
 /**
- * workbench.band@1 — Waits on you: how many decisions are wanted from the person (the button is
- * pressed while there is one), and beside it what is building or held, when anything is. Pressing it
- * opens the inbox in the centre.
+ * workbench.band@1 — Needs you: shown only while a major change waits for a person's yes. Pressing
+ * it opens the board, where the decision is at the top.
  */
 
-import { definePlugin, useQuery } from '@cortex/sdk';
-import { CHANGED, NO_SELECTION, loadFailure, local, useManageSelection, type Inbox } from './manage';
+import { definePlugin, setShared, useQuery } from '@cortex/sdk';
+import { CHANGED, LAYOUT_BOARD, local, type Inbox } from './manage';
 import './band.css';
 
-function InboxBand() {
+function NeedsYou() {
   const inbox = useQuery<Inbox>('manage.inbox.list', (client) => client.call<Inbox>('manage.inbox.list', {}), { topics: [CHANGED] });
-  const [selection, setSelection] = useManageSelection();
-  const waiting = inbox.data?.asks?.length ?? 0;
+  const waiting = inbox.data?.asks?.filter((ask) => ask.kind !== 'clarify').length ?? 0;
+  if (waiting === 0) return null;
   return (
     <span className="cm-band" data-build={__CORTEX_BUILD__} data-waiting={waiting}>
-      <button type="button" className="detent" aria-pressed={waiting > 0} data-open={selection.view === 'inbox' ? 'true' : 'false'}
-        title={waiting > 0 ? 'Open what waits on your decision' : 'Nothing waits on you; open the inbox'}
-        onClick={() => setSelection(NO_SELECTION)}>
-        Waits on you <span className="k">{waiting}</span>
+      <button type="button" className="detent" aria-pressed title="A major change waits for your yes" onClick={() => setShared(LAYOUT_BOARD, true)}>
+        Needs you <span className="k">{waiting}</span>
       </button>
-      {inbox.data?.count_line && <span className="ap faint">{inbox.data.count_line}</span>}
-      {inbox.error && !inbox.data && <span className="ap live cm-band-fail">{loadFailure('What waits on you', inbox)}</span>}
     </span>
   );
 }
 
-export default definePlugin({ slot: 'workbench.band@1', component: local(InboxBand) });
+export default definePlugin({ slot: 'workbench.band@1', component: local(NeedsYou) });

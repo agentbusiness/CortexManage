@@ -7,7 +7,7 @@
   "cortex": {
     "id": "manage.inbox",
     "slot": "workbench.band@1",
-    "label": "Waits on you",
+    "label": "Needs you",
     "order": 40
   },
   "scripts": {
@@ -28,7 +28,7 @@
     "@vitejs/plugin-react": "6.1.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "typescript": "6.0.3",
-    "vite": "8.3.5"
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
   }
 }

@@ -79,8 +79,6 @@ pub struct Limits {
     /// Lines `read` gives when the model names none, and hits `search` gives.
     pub read_lines: u32,
     pub search_hits: u32,
-    /// A task's `limit_lines` when the plan names none.
-    pub task_limit_lines: u32,
     /// How long a call the model plugin refused (restarting, busy) is tried again, in seconds.
     pub refused_window_s: u64,
 }

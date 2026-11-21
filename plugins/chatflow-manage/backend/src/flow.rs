@@ -5,12 +5,13 @@
 //! manage plugin (`manage.request.say`), which adds it to the request or steers the builder. Before
 //! the building starts the model answers them (REPLY), from the request as it stands; the manage
 //! plugin's own line is shown when the model does not answer and from the building on. The verbs
-//! of a coding conversation (plans, specs, approvals, attachments) are not part of this flow.
+//! of a coding conversation (plans, specs, approvals) are not part of this flow. Attachments are:
+//! a message may carry files, images and long pasted text, stored as CortexCode stores them.
 
 use crate::data::Data;
-use cc_protocol::contracts::chatflow::{FlowState, RunningResult, TurnResult, verbs};
+use cc_protocol::contracts::chatflow::{Attachment, AttachmentPutParams, FlowState, RunningResult, TurnResult, verbs};
 use cc_protocol::contracts::frame::{kinds, methods as frame_methods};
-use cc_protocol::contracts::manage::{AssessParams, ConvergeParams, DriftParams, MatchParams, PlanParams, SayParams, ValidateParams, flow as stage_methods, methods as manage_methods};
+use cc_protocol::contracts::manage::{AssessParams, ConvergeParams, DriftParams, MatchParams, PlanParams, RequestFile, SayParams, ValidateParams, flow as stage_methods, methods as manage_methods};
 use cc_protocol::{Ctx, PluginEnv, RpcError, codes, parse_params, to_value};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 pub const CATEGORY: &str = stage_methods::CATEGORY;
 
 /// Every verb the flow serves (its hello's `provides`).
-pub const VERBS: &[&str] = &[verbs::TURN, verbs::STEER, verbs::CANCEL, verbs::STATE, verbs::RUNNING, "assess", "match", "plan", "validate", "drift", "converge", "digest", "why"];
+pub const VERBS: &[&str] = &[verbs::TURN, verbs::STEER, verbs::CANCEL, verbs::STATE, verbs::RUNNING, verbs::ATTACHMENT_PUT, "assess", "match", "plan", "validate", "drift", "converge", "digest", "why"];
 
 /// Something in flight: a stage's model question, or a message on its way to the manage plugin.
 struct Run {
@@ -57,6 +58,22 @@ struct Message {
     session_id: String,
     #[serde(default)]
     text: String,
+    #[serde(default)]
+    attachments: Vec<Attachment>,
+}
+
+/// What the manager reads of an attachment.
+pub fn file_of(attachment: &Attachment) -> RequestFile {
+    RequestFile {
+        kind: attachment.kind.clone(),
+        path: attachment.path.clone(),
+        name: attachment.name.clone(),
+        mime: attachment.mime.clone(),
+        bytes: attachment.bytes,
+        pasted_text: attachment.pasted_text,
+        lines: attachment.lines,
+        thumb: attachment.thumb.clone(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -170,19 +187,25 @@ impl Flow {
     async fn turn(self: &Arc<Self>, params: Value) -> Result<Value, RpcError> {
         let message: Message = parse_params(params)?;
         let text = message.text.trim().to_owned();
-        if text.is_empty() {
+        let attachments = message.attachments;
+        if text.is_empty() && attachments.is_empty() {
             return Err(RpcError::invalid_params(self.data()?.text("empty_message", &[])));
         }
         let session = message.session_id;
         // Not tied to this call: the call answers at once, the passing on goes on after it.
         let running = self.begin(&session, "say", &CancellationToken::new());
         let run_id = running.id.clone();
-        self.journal(&session, kinds::USER_MESSAGE, json!({"text": text, "run_id": run_id})).await?;
+        let mut entry = json!({"text": text, "run_id": run_id});
+        if !attachments.is_empty() {
+            entry["attachments"] = json!(attachments);
+        }
+        self.journal(&session, kinds::USER_MESSAGE, entry).await?;
+        let files: Vec<RequestFile> = attachments.iter().map(file_of).collect();
         let flow = self.clone();
         tokio::spawn(async move {
             let cancel = running.cancel.clone();
             let said = tokio::select! {
-                said = flow.say(&session, &text, &cancel) => said,
+                said = flow.say(&session, &text, &files, &cancel) => said,
                 _ = cancel.cancelled() => Err(RpcError::cancelled()),
             };
             let entry = match said {
@@ -199,11 +222,11 @@ impl Flow {
         to_value(&TurnResult { run_id, queued_as_steer: false })
     }
 
-    async fn say(&self, session: &str, text: &str, cancel: &CancellationToken) -> Result<String, RpcError> {
+    async fn say(&self, session: &str, text: &str, files: &[RequestFile], cancel: &CancellationToken) -> Result<String, RpcError> {
         let request = self.request_of(session).await?;
         // The request as it stood before this message: what the model answers from.
         let before = self.ctx()?.call(manage_methods::REQUEST_GET, json!({"id": request})).await.ok();
-        let params = to_value(&SayParams { request, text: text.to_owned() })?;
+        let params = to_value(&SayParams { request, text: text.to_owned(), attachments: files.to_vec() })?;
         let answer = self.ctx()?.call(manage_methods::REQUEST_SAY, params).await?;
         let line = answer.get("text").and_then(Value::as_str).unwrap_or("").trim().to_owned();
         let line = if line.is_empty() { self.data()?.text("no_line", &[]) } else { line };
@@ -228,6 +251,14 @@ impl Flow {
                 to_value(&self.state(&session.session_id))
             }
             verbs::RUNNING => to_value(&self.running()),
+            verbs::ATTACHMENT_PUT => {
+                let put: AttachmentPutParams = parse_params(params)?;
+                let home = self.env.home.clone();
+                let stored = tokio::task::spawn_blocking(move || crate::attachments::put(&home, &[], put))
+                    .await
+                    .map_err(|error| RpcError::internal(format!("the attachment could not be stored: {error}")))??;
+                to_value(&stored)
+            }
             verbs::CANCEL => {
                 let session: SessionOnly = parse_params(params)?;
                 let mut cancelled = 0;

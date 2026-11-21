@@ -8,10 +8,12 @@
 import { useState } from 'react';
 import { Menu, definePlugin, useClient, useHost, useQuery, useUiPlugins } from '@cortex/sdk';
 import { CHANGED, loadFailure, local, sessionOf, useManageSelection, type Repo, type RequestView, type Selection, type View } from './manage';
-import { InboxPage } from './Inbox';
 import { RunnerPage } from './Runner';
 import './manage.css';
 import './centre.css';
+import './composer.css';
+import { Composer } from './Composer';
+import type { AttachContext, AttachShell, Attachment, PutParams, PutResult } from './attachments';
 
 /** A slot another part fills, or the line that says the part is not there. */
 function Hosted({ slot, missing }: { slot: string; missing: string }) {
@@ -48,25 +50,30 @@ function RepoHead({ selection, open, repo }: { selection: Selection; open: (next
  * its session, where the manager answers, rates it and plans it. */
 function NewSession({ repos, selection, open }: { repos: Repo[]; selection: Selection; open: (next: Selection) => void }) {
   const client = useClient();
+  const host = useHost();
   const managed = repos.filter((repo) => repo.managed);
   const repo = managed.find((candidate) => candidate.id === selection.repo) ?? managed[0] ?? null;
   const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [files, setFiles] = useState<Attachment[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const send = async () => {
-    const text = draft.trim();
-    if (!repo || !text || busy) return;
-    setBusy(true);
+  const send = async (text: string, attachments: Attachment[]): Promise<boolean> => {
+    if (!repo) return false;
     setError(null);
     try {
-      const created = await client.call<RequestView>('manage.request.create', { repo: repo.id, text, from: { kind: 'person' } });
-      setDraft('');
+      const created = await client.call<RequestView>('manage.request.create', { repo: repo.id, text, from: { kind: 'person' }, ...(attachments.length > 0 ? { attachments } : {}) });
       open(sessionOf(created));
+      return true;
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
-    } finally {
-      setBusy(false);
+      return false;
     }
+  };
+  const attach: AttachContext = {
+    put: (params: PutParams) => client.call<PutResult>('chatflow-manage.attachment.put', params),
+    shell: host.shell as unknown as AttachShell | null,
+    roots: [],
+    projectId: null,
+    sessionId: null,
   };
   if (!repo) return <p className="cm-line">Add a repository first: a request is always for one.</p>;
   return (
@@ -78,25 +85,11 @@ function NewSession({ repos, selection, open }: { repos: Repo[]; selection: Sele
           ? <Menu label="For" value={repo.name} items={managed.map((candidate) => ({ key: candidate.id, label: candidate.name, selected: candidate.id === repo.id, onSelect: () => open({ view: 'new', repo: candidate.id, request: null, package: null }) }))} />
           : <span className="ap faint">{repo.name}</span>}
       </div>
-      <div className="cm-new-body">
-        <p className="cm-line">Say what should change in {repo.name}, in your own words. The manager answers here, rates the change and plans it; you can keep talking until it is right.</p>
-      </div>
+      <div className="cm-new-body" />
       <div className="composer cm-composer">
         {error && <p className="inline-error" role="alert">{error}</p>}
-        <div className="cm-box">
-          <textarea className="write" rows={2} value={draft} autoFocus placeholder={`What should change in ${repo.name}?`} aria-label="Message"
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                void send();
-              }
-            }} />
-          <div className="tools cm-tools" role="group" aria-label="Message tools">
-            <div className="grow" />
-            <button type="button" className="detent send" disabled={busy || draft.trim() === ''} onClick={() => void send()}>{busy ? 'Sending…' : 'Send'}</button>
-          </div>
-        </div>
+        <Composer draft={draft} onDraft={setDraft} onSend={send} disabled={false} autoFocus
+          placeholder={`What should change in ${repo.name}?`} attachments={files} onAttachments={setFiles} attach={attach} />
       </div>
     </div>
   );
@@ -111,7 +104,7 @@ function Centre() {
     case 'session':
       body = selection.request
         ? <Hosted slot="manage.session@1" missing="The session view is missing: the chat flow part (chatflow-manage) is not installed, so a request's thread cannot be shown." />
-        : <p className="cm-line">Choose a request in the sidebar to open its session.</p>;
+        : <p className="cm-line">Choose a request on the board, or press New request.</p>;
       break;
     case 'new':
       body = <NewSession repos={repos.data ?? []} selection={selection} open={setSelection} />;
@@ -131,7 +124,7 @@ function Centre() {
       );
       break;
     default:
-      body = <InboxPage repos={repos.data ?? []} open={setSelection} />;
+      body = <p className="cm-line">Choose a request on the board, or press New request.</p>;
   }
   return <div className="cm-centre" data-view={selection.view} data-build={__CORTEX_BUILD__}>{body}</div>;
 }

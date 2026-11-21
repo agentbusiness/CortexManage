@@ -1,12 +1,8 @@
-//! What the repository's policy decides, in plain code: the tier's floor from the paths a plan
-//! touches and from its size, how long a package is held, its budget, how many rework rounds it
-//! gets and how long it soaks. No model is asked here.
+//! What the repository's policy decides, in plain code: how long a package waits for similar
+//! work to join it, and path matching for a plan's scope. The tier is the model's; no folder
+//! decides it.
 
-use crate::texts::Texts;
-use cc_protocol::contracts::manage::{Point, Policy, Tier};
-
-/// How many reasons of one sort are written out; the rest are counted.
-const REASONS: usize = 4;
+use cc_protocol::contracts::manage::{Policy, Tier};
 
 /// Whether `path` matches `glob`. `**` stands for any number of folders, `*` and `?` for
 /// characters inside one name. A folder matches the glob of everything below it
@@ -74,52 +70,6 @@ pub fn inside(touch: &str, file: &str) -> bool {
     (touch.len() <= file.len() && touch[..] == file[..touch.len()]) || segments(&touch, &file)
 }
 
-/// The floor and why, one sentence per reason.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Floor {
-    pub tier: Tier,
-    pub reasons: Vec<String>,
-}
-
-fn name_some(texts: &Texts, key: &str, paths: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = paths.iter().take(REASONS).map(|path| texts.get(key, &[("path", path)])).collect();
-    if paths.len() > REASONS {
-        out.push(texts.get("reason_more", &[("count", &(paths.len() - REASONS).to_string())]));
-    }
-    out
-}
-
-/// The tier's floor of a plan: from its kept points' scopes against the policy's paths, from the
-/// standard paths among them (`standard`, as the standard plugin answered). How big a plan is
-/// says nothing about what it changes, so size raises nothing.
-pub fn floor(policy: &Policy, points: &[Point], standard: &[String], texts: &Texts) -> Floor {
-    let mut touches: Vec<String> = points.iter().flat_map(|point| point.touches.iter().cloned()).collect();
-    touches.sort();
-    touches.dedup();
-    let hit = |globs: &[String]| -> Vec<String> { touches.iter().filter(|touch| globs.iter().any(|glob| touch_hits(glob, touch))).cloned().collect() };
-    let major = hit(&policy.major_paths);
-    let minor: Vec<String> = hit(&policy.minor_paths).into_iter().filter(|path| !major.contains(path)).collect();
-
-    let mut tier = Tier::Safe;
-    let mut reasons = Vec::new();
-    if !major.is_empty() {
-        tier = Tier::Major;
-        reasons.extend(name_some(texts, "reason_major_path", &major));
-    }
-    if !standard.is_empty() {
-        tier = Tier::Major;
-        reasons.extend(name_some(texts, "reason_standard", standard));
-    }
-    if !minor.is_empty() {
-        tier = tier.max(Tier::Minor);
-        reasons.extend(name_some(texts, "reason_minor_path", &minor));
-    }
-    if reasons.is_empty() {
-        reasons.push(texts.get("reason_safe", &[]));
-    }
-    Floor { tier, reasons }
-}
-
 /// How long a package of this tier is held, in minutes. None: it waits for a yes (major).
 pub fn hold_min(policy: &Policy, tier: Tier) -> Option<u32> {
     match tier {
@@ -129,19 +79,15 @@ pub fn hold_min(policy: &Policy, tier: Tier) -> Option<u32> {
     }
 }
 
-/// When a package's hold ends: `now` plus the tier's time, never later than the longest hold
-/// counted from when the package was first held. 0 for a major package (no clock), `now` for an
-/// urgent one.
-pub fn hold_until(policy: &Policy, tier: Tier, urgent: bool, now_ms: u64, held_since_ms: u64) -> u64 {
+/// When a package's wait ends: `now` plus the tier's time (the time similar requests have to
+/// come in and join it). 0 for a major package (it waits for a yes), `now` for an urgent one.
+pub fn hold_until(policy: &Policy, tier: Tier, urgent: bool, now_ms: u64) -> u64 {
     if urgent {
         return now_ms;
     }
     match hold_min(policy, tier) {
         None => 0,
-        Some(minutes) => {
-            let cap = held_since_ms + u64::from(policy.hold_max_min) * 60_000;
-            (now_ms + u64::from(minutes) * 60_000).min(cap).max(now_ms)
-        }
+        Some(minutes) => now_ms + u64::from(minutes) * 60_000,
     }
 }
 
@@ -162,14 +108,8 @@ pub fn rework(policy: &Policy, tier: Tier) -> u32 {
     }
 }
 
-/// Minutes a landed package soaks; none for an urgent one.
-pub fn soak_min(policy: &Policy, tier: Tier, urgent: bool) -> u32 {
-    if urgent {
-        return 0;
-    }
-    match tier {
-        Tier::Safe => policy.soak_safe_min,
-        Tier::Minor => policy.soak_minor_min,
-        Tier::Major => policy.soak_major_min,
-    }
+/// How long finished work runs in the person's apps before its release: never. It goes with the
+/// repository's next scheduled release (owner, 2026-11-21).
+pub fn soak_min(_policy: &Policy, _tier: Tier, _urgent: bool) -> u32 {
+    0
 }

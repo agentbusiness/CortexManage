@@ -23,15 +23,14 @@ plan_tool_calls = 12
 tool_result_chars = 6000
 # Most characters of one tool result carried into the plan's own question (twelve of them must fit).
 plan_evidence_chars = 3500
-# Most tasks in a plan.
-plan_max_tasks = 12
+# The task numbers the plan's grammar can name (the grammar needs a list; it is not a size
+# rule: a plan has as many tasks as the work needs, up to this many).
+plan_max_tasks = 40
 # Most characters of a diff DRIFT and CONVERGE are shown.
 diff_chars = 60000
 # Lines `read` gives when the model names none; hits `search` gives.
 read_lines = 160
 search_hits = 20
-# A task's line limit when the plan names none.
-task_limit_lines = 150
 # A call the model plugin refused (restarting, swapping, busy) is tried again for this long (seconds).
 refused_window_s = 600
 
@@ -66,7 +65,7 @@ tag = "coding"
 prompts = ["plan", "plan_fields"]
 schema = "plan"
 sampling = "decision"
-max_tokens = 9000
+max_tokens = 16000
 
 [stage.VALIDATE]
 tag = "coding"

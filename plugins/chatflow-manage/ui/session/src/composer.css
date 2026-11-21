@@ -1,0 +1,39 @@
+/* The composer, as CortexCode's: one box, the field, then its controls inside it (+ left, Send
+   right); attachments are chips above the field, a preview for images. */
+#cc .cx-composer .cx-box{border:1px solid var(--rule-2);}
+#cc .cx-composer .cx-box:focus-within{border-color:var(--rubric);}
+#cc .cx-composer .cx-box .write{display:block;width:100%;border:0;padding-bottom:4px;}
+#cc .cx-composer .cx-tools{display:flex;align-items:center;gap:8px;margin:0;padding:0 8px 8px;}
+#cc .cx-composer .cx-tools .grow{flex:1;}
+#cc .cx-composer .cx-plus{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0;
+  border:1px solid var(--rule-2);background:transparent;color:var(--ink-2);font:400 17px/1 Archivo,sans-serif;cursor:pointer;}
+#cc .cx-composer .cx-plus:hover{color:var(--ink);border-color:var(--ink-3);}
+#cc .cx-composer .cx-plus:disabled{color:var(--ink-3);border-color:var(--rule);cursor:default;}
+#cc .cx-composer .cx-tools .detent.send{height:24px;padding:0 14px;background:var(--rubric);border-color:var(--rubric);color:var(--ground);}
+#cc .cx-composer .cx-tools .detent.send:hover{background:var(--rubric-lift);border-color:var(--rubric-lift);color:var(--ground);}
+#cc .cx-composer .cx-tools .detent.send:disabled{background:transparent;border-color:var(--rule);color:var(--ink-3);}
+#cc .cx-composer[data-dragging="true"] .cx-box{border-color:var(--rubric);}
+#cc .cx-composer .cx-attached{list-style:none;margin:0 0 8px;padding:0;}
+#cc .cx-composer .cx-chip{max-width:280px;text-transform:none;letter-spacing:.02em;font-size:11px;}
+#cc .cx-composer .cx-chip:has(.cx-thumb){height:auto;padding:4px 8px 4px 4px;}
+#cc .cx-composer .cx-thumb{display:block;width:40px;height:40px;object-fit:cover;}
+#cc .cx-composer .cx-chip-kind{color:var(--ink-3);text-transform:uppercase;letter-spacing:.13em;font-size:9px;}
+#cc .cx-composer .cx-chip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);}
+#cc .cx-composer .cx-chip-size{color:var(--ink-3);white-space:nowrap;}
+#cc .cx-composer .cx-chip[data-making="true"]{color:var(--ink-3);}
+#cc .cx-composer .cx-chip button{text-transform:none;letter-spacing:.02em;}
+#cc .cx-composer .cx-attach-problems{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 8px;}
+#cc .cx-composer .cx-attach-problems .inline-error{margin:0;flex-basis:100%;}
+#cc .cx-composer .cx-pasted-view{margin:0 0 8px;max-height:240px;overflow:auto;white-space:pre;font-family:var(--font-mono);font-size:12px;}
+
+/* what was attached to a message in the thread: chips, a click shows the file in Finder */
+#cc .cx-sent{list-style:none;margin:8px 0 0;padding:0;}
+#cc .cx-sent .cx-chip{max-width:320px;padding:0;text-transform:none;letter-spacing:.02em;font-size:11px;}
+#cc .cx-sent .cx-chip:has(.cx-thumb){height:auto;}
+#cc .cx-sent .cx-chip-open{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:0 8px;height:100%;font:inherit;color:inherit;text-transform:none;letter-spacing:inherit;}
+#cc .cx-sent .cx-chip-open:disabled{cursor:default;}
+#cc .cx-sent .cx-chip:has(.cx-thumb) .cx-chip-open{padding:4px 8px 4px 4px;}
+#cc .cx-sent .cx-thumb{display:block;width:64px;height:64px;object-fit:cover;}
+#cc .cx-sent .cx-chip-kind{color:var(--ink-3);text-transform:uppercase;letter-spacing:.13em;font-size:9px;}
+#cc .cx-sent .cx-chip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);}
+#cc .cx-sent .cx-chip-size{color:var(--ink-3);white-space:nowrap;}

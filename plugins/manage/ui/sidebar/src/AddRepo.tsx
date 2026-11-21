@@ -54,11 +54,11 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
   const wanted = filter.trim().toLowerCase();
   const listed = (repos.data ?? []).filter((r) => wanted === '' || r.full_name.toLowerCase().includes(wanted));
 
-  const add = async (source: { name: string; url: string; main: string }) => {
+  const add = async (source: { name: string; url: string; main: string; github?: string }) => {
     const created = await client.call<Repo>('manage.repo.create', {
       name: source.name,
       prefix: '',
-      source: { kind: 'git', url: source.url, main: source.main, changes: 'none' },
+      source: { kind: 'git', url: source.url, main: source.main, changes: 'none', github: source.github ?? '' },
       // No computer is named: its jobs go to any free CortexCode.
       runner: '',
       runner_name: '',
@@ -83,11 +83,11 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
   const ready = way === 'github' ? picked !== null : way === 'new' ? name.trim() !== '' : name.trim() !== '' && address.trim() !== '';
   const submit = () => {
     if (!ready) return;
-    if (way === 'github' && picked) void run('Adding', () => add({ name: ownName(picked), url: picked.clone_url, main: picked.default_branch || 'main' }));
+    if (way === 'github' && picked) void run('Adding', () => add({ name: ownName(picked), url: picked.clone_url, main: picked.default_branch || 'main', github: picked.full_name }));
     if (way === 'new') {
       void run('Making it on GitHub', async () => {
         const made = await client.call<GithubRepo>('vcs.github.repo.create', { name: name.trim(), private: true });
-        await add({ name: name.trim(), url: made.clone_url, main: made.default_branch || 'main' });
+        await add({ name: name.trim(), url: made.clone_url, main: made.default_branch || 'main', github: made.full_name });
       });
     }
     if (way === 'address') void run('Adding', () => add({ name: name.trim(), url: address.trim(), main: 'main' }));

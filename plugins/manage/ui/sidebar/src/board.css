@@ -1,0 +1,62 @@
+/* The board: four columns, each repository a row. The theme's grammar only: 1px hairlines, no
+   radius, no shadow, no gradient, its tokens. */
+
+#cc .cm-board{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;}
+#cc .cm-board .grow{flex:1;}
+
+/* the bar: what just happened, then the board's three controls */
+#cc .cm-board-bar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:12px 18px 0;}
+#cc .cm-board-bar .said{font-family:var(--font-apparatus);font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--counter);}
+#cc .cm-board-note{margin:8px 18px 0;}
+
+/* a major change waiting for a yes: only while there is one */
+#cc .cm-needs{flex:0 0 auto;margin:12px 18px 0;border:1px solid var(--rubric);padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
+#cc .cm-needs .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+#cc .cm-needs .what{flex:1;min-width:0;font-family:var(--font-reading);font-size:13.5px;color:var(--ink);}
+#cc .cm-needs .inline-error{margin:0;}
+
+/* the kanban: five columns side by side, each its own box, cards stacked in it */
+#cc .cm-kanban{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:12px 18px 18px;}
+#cc .cm-col{min-height:0;display:flex;flex-direction:column;border:1px solid var(--rule);}
+#cc .cm-col.over{border-color:var(--counter);background:var(--rubric-wash);}
+#cc .cm-col-head{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;padding:10px 12px 9px;border-bottom:1px solid var(--rule);}
+#cc .cm-col-head .nm{font-family:var(--font-apparatus);font-size:10.5px;font-weight:650;letter-spacing:.15em;text-transform:uppercase;color:var(--ink);}
+#cc .cm-col-head .n{font-family:var(--font-apparatus);font-size:10px;font-weight:600;color:var(--ink-3);}
+#cc .cm-col-cards{flex:1;min-height:0;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
+
+/* a card */
+#cc .cm-card{border:1px solid var(--rule);background:var(--ground);padding:9px 11px;display:flex;flex-direction:column;gap:4px;cursor:grab;outline:0;
+  transition:border-color .12s linear;}
+#cc .cm-card.fixed{cursor:default;}
+#cc .cm-card:hover{border-color:var(--rule-2);}
+#cc .cm-card:focus-visible,#cc .cm-card.sel{border-color:var(--ink-3);}
+#cc .cm-card.sel{border-left:2px solid var(--rubric);padding-left:10px;}
+#cc .cm-card.urgent{border-left:2px solid var(--rubric);padding-left:10px;}
+#cc .cm-card.over{border-color:var(--counter);background:var(--rubric-wash);}
+#cc .cm-card.paused .t{color:var(--ink-3);}
+#cc .cm-card .repo{font-family:var(--font-apparatus);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);}
+#cc .cm-card .t{font-family:var(--font-reading);font-size:14px;line-height:1.3;color:var(--ink);}
+#cc .cm-card .tags,#cc .cm-card .from{font-family:var(--font-apparatus);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);}
+#cc .cm-card .from{color:var(--counter);}
+#cc .cm-card .state{font-family:var(--font-reading);font-size:12.5px;font-style:italic;color:var(--ink-2);}
+#cc .cm-card .state.live{color:var(--rubric);font-style:normal;}
+#cc .cm-card .urgent-word{color:var(--rubric);font-style:normal;}
+
+/* work built together: one bracket */
+#cc .cm-together{border-left:1px solid var(--counter);padding-left:8px;display:flex;flex-direction:column;gap:6px;}
+#cc .cm-together>.lab{font-family:var(--font-apparatus);font-size:9px;font-weight:650;letter-spacing:.15em;text-transform:uppercase;color:var(--counter);}
+
+/* all repositories: column names once, then a section per repository, one under another, each with
+   its own five lanes, boxed like the single board's */
+#cc .cm-sw{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 18px 18px;}
+#cc .cm-sw-head{flex:0 0 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;}
+#cc .cm-sw-head .nm{display:flex;align-items:baseline;gap:8px;padding:10px 12px 9px;border:1px solid var(--rule);font-family:var(--font-apparatus);font-size:10.5px;font-weight:650;letter-spacing:.15em;text-transform:uppercase;color:var(--ink);}
+#cc .cm-sw-head .n{font-size:10px;font-weight:600;letter-spacing:0;color:var(--ink-3);}
+#cc .cm-sw-body{flex:1;min-height:0;overflow:auto;}
+#cc .cm-sw-repo{padding:14px 0 4px;}
+#cc .cm-sw-name{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+#cc .cm-sw-name button:not(.detent){border:0;background:transparent;padding:0;cursor:pointer;font-family:var(--font-apparatus);font-size:11px;font-weight:650;letter-spacing:.15em;text-transform:uppercase;color:var(--ink);}
+#cc .cm-sw-name button:not(.detent):hover{color:var(--rubric);}
+#cc .cm-sw-cells{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;}
+#cc .cm-sw-cell{min-width:0;min-height:120px;display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--rule);}
+#cc .cm-sw-cell.over{border-color:var(--counter);background:var(--rubric-wash);}

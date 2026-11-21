@@ -1,13 +1,13 @@
 {
   "name": "@cortex-ui/manage-card",
   "version": "0.1.0",
-  "description": "The Card tab: the open request's stages, its package, gates, and where it builds.",
+  "description": "Details: where the open request is, what will be done, how we will know it works, what happened.",
   "type": "module",
   "license": "Apache-2.0",
   "cortex": {
     "id": "manage.card",
     "slot": "pane.card@1",
-    "label": "Card",
+    "label": "Details",
     "order": 10
   },
   "scripts": {
@@ -28,7 +28,7 @@
     "@vitejs/plugin-react": "6.1.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "typescript": "6.0.3",
-    "vite": "8.3.5"
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
   }
 }

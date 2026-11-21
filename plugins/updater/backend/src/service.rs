@@ -9,7 +9,8 @@
 //!   the changes, or keep theirs until the next version.
 //! - A version that cannot start (the frame's check refused it and the previous one keeps running)
 //!   is not tried again; the popup and Settings > Plugins say so with the reason (`failed`).
-//! - A build of the user's own (`+dev.` version) is left alone; Settings > Plugins shows it.
+//! - A build of the user's own (`+dev.` version), or any version newer than the latest release, is
+//!   left alone; Settings > Plugins shows it.
 //! - A newer frame is downloaded and staged; it runs from the next start ("Restart to update").
 //! - A reset (`update.reset`, Settings > Plugins) puts every plugin back to the latest at once,
 //!   the user's own builds and changes included, after one confirmation.
@@ -907,6 +908,11 @@ impl Updater {
         for (item, package) in items {
             let Some(package) = package else { continue };
             if item.action != reset_actions::INSTALL {
+                continue;
+            }
+            // An update never goes back: a version newer than the latest release (a build made
+            // here) stays until a newer release comes. A reset still goes back, on purpose.
+            if release::is_newer(&item.installed, &item.release) {
                 continue;
             }
             auto.push(Planned { id: item.plugin, name: item.name, version: item.release, package, drop_changes: false });

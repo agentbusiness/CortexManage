@@ -22,6 +22,10 @@ export interface Source {
   main: string;
   /** `none` | `github-pr`. */
   changes: string;
+  /** Who the jobs' commits are made as; both empty: git's own identity on the builder. */
+  commit_name?: string;
+  commit_email?: string;
+  github?: string;
 }
 
 /** `[minutes, tokens, lines]`. */
@@ -44,6 +48,10 @@ export interface Policy {
   minor_paths: string[];
   /** `HH:MM`. */
   train_at: string;
+  /** `3h` | `week` | empty: daily. */
+  train_every?: string;
+  /** For a weekly release: 0 Monday … 6 Sunday. */
+  train_day?: number;
 }
 
 export interface Repo {
@@ -109,6 +117,54 @@ export interface RequestView {
   plan?: Plan;
   /** `[stage, ms]`: when each stage was reached. */
   stages: [string, number][];
+  /** One line per reason the tier is what it is (the first is the model's). */
+  tier_reasons?: string[];
+  /** Why it ended; for a released one, the parts and versions it shipped in. */
+  ended_reason?: string;
+  from?: { kind: string; name: string; node: string };
+}
+
+/** The board's four columns, in a person's words. */
+export type Column = 'incoming' | 'waiting' | 'coding' | 'done' | 'shipped';
+
+export const COLUMNS: Array<{ key: Column; label: string }> = [
+  { key: 'incoming', label: 'Incoming' },
+  { key: 'waiting', label: 'Waiting' },
+  { key: 'coding', label: 'Coding' },
+  { key: 'done', label: 'Done' },
+  { key: 'shipped', label: 'Shipped' },
+];
+
+/** A request as the board shows it (`BoardItem`, flattened). */
+export interface BoardItem {
+  id: string;
+  repo: string;
+  session_id: string;
+  title: string;
+  kind: string;
+  tier: Tier;
+  surface: string[];
+  urgent: boolean;
+  stage: string;
+  ended_as: string;
+  package: string;
+  from?: { kind: string; name: string; node: string };
+  word: Word;
+  column: Column;
+  paused: boolean;
+  starts_ms: number;
+  step: number;
+  steps: number;
+  checking: boolean;
+  /** Started but not building yet: next | after | builder. */
+  queued: string;
+  soak_until_ms: number;
+  release_ms: number;
+  released_ms: number;
+  /** The package it is built in with others; empty when it is alone. */
+  together: string;
+  reports: number;
+  reporters: string[];
 }
 
 export interface Finding {
@@ -191,6 +247,8 @@ export interface PackageView {
   soak_until_ms: number;
   stopped: boolean;
   created_ms: number;
+  /** The computer building it, by name. */
+  runner_name?: string;
   word: Word;
   points: Point[];
   gates: Gate[];
@@ -256,7 +314,7 @@ export const STAGE_LABEL: Record<string, string> = {
   building: 'Building',
   proving: 'Proving',
   landed: 'Landed',
-  soaking: 'Soaking',
+  soaking: 'Waiting for release',
   released: 'Released',
 };
 
@@ -271,7 +329,7 @@ const STAGE_SHORT: Record<string, string> = {
   building: 'Build',
   proving: 'Prove',
   landed: 'Landed',
-  soaking: 'Soak',
+  soaking: 'Done',
   released: 'Released',
 };
 
@@ -329,6 +387,9 @@ export const TIER_LABEL: Record<Tier, string> = { safe: 'Safe', minor: 'Minor', 
 // ─── the selection ──────────────────────────────────────────────────────────
 
 export type View = 'session' | 'new' | 'inbox' | 'charter' | 'releases' | 'runner';
+
+/** The sidebar unfolded over the work area (the workbench's shared key). */
+export const LAYOUT_BOARD = 'layout.board';
 
 /** What is open, for every package of the window (shared key `manage.selection`). */
 export interface Selection {

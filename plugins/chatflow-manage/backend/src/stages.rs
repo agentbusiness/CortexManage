@@ -262,11 +262,13 @@ fn checked_assess(mut answer: AssessedParams, text: &str) -> Result<AssessedPara
     Ok(answer)
 }
 
-/// The cautious assessment: major, not urgent, to be acted on. What kind of work it is stays as
+/// The cautious assessment when no answer could be read: minor, not urgent, to be acted on. Not
+/// major: an unreadable answer is no reason to stop and ask a person; the plan's paths can still
+/// raise it. What kind of work it is stays as
 /// the model last said when it said anything readable; nothing is quoted, because no quote held.
 fn cautious_assess(last: Option<&Value>, request: &str) -> AssessedParams {
     let said = last.and_then(|value| read_assess(value, request).ok()).unwrap_or_default();
-    AssessedParams { request: request.to_owned(), actionable: true, questions: Vec::new(), title: said.title, kind: said.kind, tier: Tier::Major, surface: said.surface, urgent: false, because: String::new(), urgent_because: String::new() }
+    AssessedParams { request: request.to_owned(), actionable: true, questions: Vec::new(), title: said.title, kind: said.kind, tier: Tier::Minor, surface: said.surface, urgent: false, because: String::new(), urgent_because: String::new() }
 }
 
 pub fn read_match(value: &Value) -> Result<MatchAnswer, String> {

@@ -1,169 +1,110 @@
 /**
- * workbench.sidebar@1 — at the top New request (it opens the conversation in the centre) and Add
- * repo (a sheet: from GitHub, or any git address). Then the
- * repositories, and under each its open requests: a package of several requests is a bracket
- * around them.
- * Pressing a repository's name opens its page; pressing a request opens its session.
+ * workbench.sidebar@1 — the board, unfolded or folded.
+ *
+ * Unfolded (the home screen) it is the board over the whole work area. Folded it is the sidebar
+ * beside the conversation: each repository with its requests, in the board's order (Incoming,
+ * Waiting, Coding, Done), each saying where its work is. B, Fold and Open chat fold it; Board
+ * unfolds it.
  */
 
-import { useState } from 'react';
-import { Cross, definePlugin, useNow, useQuery, type Client } from '@cortex/sdk';
-import {
-  CHANGED,
-  STAGE_LABEL,
-  count,
-  loadFailure,
-  local,
-  pipClass,
-  sessionOf,
-  shortStage,
-  timeOf,
-  useManageSelection,
-  type PackageView,
-  type Repo,
-  type RequestView,
-  type Selection,
-} from './manage';
+import { useEffect, useState } from 'react';
+import { definePlugin, setShared, useNow, useShared } from '@cortex/sdk';
+import { COLUMNS, LAYOUT_BOARD, loadFailure, local, pipClass, sessionOf, useManageSelection, type BoardItem, type Repo, type Selection } from './manage';
+import { BoardView, useBoard } from './Board';
+import { stateLine } from './moves';
 import { AddRepo } from './AddRepo';
 import './manage.css';
 import './sidebar.css';
+import './board.css';
 
-const listRepos = async (client: Client) => (await client.call<{ repos: Repo[] }>('manage.repo.list', {}))?.repos ?? [];
+/** The board is the home screen: the window opens on it once per start. */
+let homed = false;
 
-function useRepos() {
-  return useQuery<Repo[]>('manage.repo.list', listRepos, { topics: [CHANGED] });
-}
+const ORDER = Object.fromEntries(COLUMNS.map((column, index) => [column.key, index]));
+const LABEL = Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])) as Record<string, string>;
 
-/** What the bracket around a package's requests says. */
-function packageLabel(pack: PackageView | undefined, now: number): string {
-  if (!pack) return 'Package';
-  if (pack.stage === 'held') {
-    if (pack.stopped) return 'Package · stopped';
-    return pack.hold_until_ms ? `Package · held until ${timeOf(pack.hold_until_ms, now)}` : 'Package · waits for your yes';
-  }
-  return `Package · ${(STAGE_LABEL[pack.stage] ?? pack.stage).toLowerCase()}`;
-}
-
-/** The requests in their order, those of one package of several gathered where its first one is. */
-function grouped(requests: RequestView[]): Array<{ pack: string | null; requests: RequestView[] }> {
-  const size = new Map<string, number>();
-  for (const request of requests) if (request.package) size.set(request.package, (size.get(request.package) ?? 0) + 1);
-  const out: Array<{ pack: string | null; requests: RequestView[] }> = [];
-  const brackets = new Map<string, RequestView[]>();
-  for (const request of requests) {
-    if (request.package && (size.get(request.package) ?? 0) > 1) {
-      let members = brackets.get(request.package);
-      if (!members) {
-        members = [];
-        brackets.set(request.package, members);
-        out.push({ pack: request.package, requests: members });
-      }
-      members.push(request);
-    } else {
-      const last = out[out.length - 1];
-      if (last && last.pack === null) last.requests.push(request);
-      else out.push({ pack: null, requests: [request] });
-    }
-  }
-  return out;
-}
-
-/** A row's word at its right. An urgent request says so until it has landed. */
-function stageWord(request: RequestView): string {
-  const landed = request.stage === 'landed' || request.stage === 'soaking' || request.stage === 'released';
-  if (request.urgent && !landed && request.word !== 'needs_you' && request.word !== 'stuck' && request.word !== 'on_hold') return 'Urgent';
-  return shortStage(request);
-}
-
-function Sessions({ requests, selection, open }: { requests: RequestView[]; selection: Selection; open: (next: Selection) => void }) {
-  return (
-    <ul className="cm-sess">
-      {requests.map((request) => {
-        const selected = selection.view === 'session' && selection.request === request.id;
-        const attention = request.word === 'needs_you' || request.word === 'stuck';
-        return (
-          <li key={request.id} className={`${selected ? 'sel' : ''}${attention ? ' attn' : ''}`} data-request={request.id}>
-            <button type="button" title={`${request.id} · ${request.title}`} aria-pressed={selected} onClick={() => open(sessionOf(request))}>
-              <span className={pipClass(request.word)} />
-              <span className="tt">{request.title || request.id}</span>
-              <span className="st">{stageWord(request)}</span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function RepoBlock({ repo, index, selection, open, now }: { repo: Repo; index: number; selection: Selection; open: (next: Selection) => void; now: number }) {
-  const requests = useQuery<RequestView[]>(
-    `manage.request.list:${repo.id}`,
-    async (client) => (await client.call<{ requests: RequestView[] }>('manage.request.list', { repo: repo.id }))?.requests ?? [],
-    { topics: [CHANGED] },
-  );
-  const packages = useQuery<PackageView[]>(
-    `manage.package.list:${repo.id}`,
-    async (client) => (await client.call<{ packages: PackageView[] }>('manage.package.list', { repo: repo.id }))?.packages ?? [],
-    { topics: [CHANGED] },
-  );
-  const open_ = requests.data ?? [];
-  const on = selection.repo === repo.id && selection.view !== 'inbox' && selection.view !== 'new';
-  const sub = repo.managed
-    ? `builds on ${repo.runner_name || 'any free CortexCode'}${requests.data ? ` · ${open_.length === 0 ? 'no open request' : count(open_.length, 'open request')}` : ''}`
-    : 'not managed yet';
+function RepoBlock({ repo, items, selection, open, now }: { repo: Repo; items: BoardItem[]; selection: Selection; open: (next: Selection) => void; now: number }) {
+  const on = selection.repo === repo.id && selection.view !== 'inbox' && selection.view !== 'session';
+  const sorted = [...items].sort((a, b) => (ORDER[a.column] ?? 0) - (ORDER[b.column] ?? 0) || Number(b.urgent) - Number(a.urgent));
   return (
     <section className={`cm-repo${repo.managed ? '' : ' off'}`} data-repo={repo.id}>
       <ul className="nav">
         <li className={on ? 'on' : undefined}>
-          <button type="button" title={`${repo.name}: charter, releases and runner`} onClick={() => open({ view: 'charter', repo: repo.id, request: null, package: null })}>
-            <span className="kk">{String(index + 1).padStart(2, '0')}</span>
+          <button type="button" title={`${repo.name}: its charter, releases and builder`} onClick={() => open({ view: 'charter', repo: repo.id, request: null, package: null })}>
             <span className="nm">{repo.name}</span>
-            <span className="sub">{sub}</span>
+            {!repo.managed && <span className="sub">not managed yet</span>}
           </button>
         </li>
       </ul>
-      {requests.error && !requests.data && <p className="inline-error">{loadFailure(`The requests of ${repo.name}`, requests)}</p>}
-      {packages.error && !packages.data && <p className="inline-error">{loadFailure(`The packages of ${repo.name}`, packages)}</p>}
-      {grouped(open_).map((group) => (group.pack ? (
-        <div key={group.pack} className="cm-pk" data-package={group.pack}>
-          <span className="ap origin">{packageLabel(packages.data?.find((pack) => pack.id === group.pack), now)}</span>
-          <Sessions requests={group.requests} selection={selection} open={open} />
-        </div>
-      ) : (
-        <Sessions key={group.requests[0]!.id} requests={group.requests} selection={selection} open={open} />
-      )))}
+      <ul className="cm-sess">
+        {sorted.map((item) => {
+          const selected = selection.view === 'session' && selection.request === item.id;
+          const attention = item.word === 'needs_you' || (item.urgent && item.column !== 'done' && item.column !== 'shipped');
+          return (
+            <li key={item.id} className={`${selected ? 'sel' : ''}${attention ? ' attn' : ''}`} data-request={item.id}>
+              <button type="button" title={`${item.title} — ${stateLine(item, now)}`} aria-pressed={selected} onClick={() => open(sessionOf(item))}>
+                <span className={pipClass(item.word)} />
+                <span className="tt">{item.title || item.id}</span>
+                <span className="st">{item.word === 'needs_you' ? 'Needs you' : item.urgent && attention ? 'Urgent' : LABEL[item.column]}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
 
-function Sidebar() {
-  const repos = useRepos();
+function Folded({ now }: { now: number }) {
+  const { repos, board, items } = useBoard();
   const [selection, setSelection] = useManageSelection();
-  const [form, setForm] = useState<'repo' | null>(null);
-  // Times in the brackets turn from a clock into a day at midnight.
-  const now = useNow(60_000, true);
+  const [adding, setAdding] = useState(false);
   const list = repos.data ?? [];
-  const done = (next: Selection | null) => {
-    setForm(null);
-    if (next) setSelection(next);
-    void repos.refresh();
-  };
   return (
     <div className="cm-side" data-build={__CORTEX_BUILD__}>
       <div className="cm-side-acts">
-        <button type="button" className="detent" aria-pressed={selection.view === 'new'} title="Describe a change to a repository; it becomes a session under that repository"
-          onClick={() => { setForm(null); setSelection({ view: 'new', repo: selection.repo ?? list.find((repo) => repo.managed)?.id ?? null, request: null, package: null }); }}>New request</button>
-        <button type="button" className="detent" aria-pressed={form === 'repo'} title="Add a git repository for CortexManage to manage" onClick={() => setForm(form === 'repo' ? null : 'repo')}>Add repo</button>
+        <button type="button" className="detent" title="Open the board over the whole window (B)" onClick={() => setShared(LAYOUT_BOARD, true)}>Board</button>
+        <button type="button" className="detent" aria-pressed={selection.view === 'new'}
+          onClick={() => setSelection({ view: 'new', repo: selection.repo ?? list.find((repo) => repo.managed)?.id ?? null, request: null, package: null })}>New request</button>
+        <button type="button" className="detent" aria-pressed={adding} onClick={() => setAdding(!adding)}>Add repo</button>
       </div>
-      {form === 'repo' && <AddRepo onClose={() => setForm(null)} onAdded={(next) => done(next)} />}
-      <div className="index-h"><Cross /><span className="ap">Repositories</span></div>
+      {adding && <AddRepo onClose={() => setAdding(false)} onAdded={(next) => { setAdding(false); setSelection(next); void repos.refresh(); }} />}
       <div className="cm-side-scroll">
         {repos.error && !repos.data && <p className="inline-error">{loadFailure('The repositories', repos)}</p>}
+        {board.error && !board.data && <p className="inline-error">{loadFailure('The requests', board)}</p>}
         {repos.data && list.length === 0 && <p className="cm-line flush">No repository yet. Add one with Add repo.</p>}
-        {list.map((repo, index) => <RepoBlock key={repo.id} repo={repo} index={index} selection={selection} open={setSelection} now={now} />)}
+        {list.map((repo) => (
+          <RepoBlock key={repo.id} repo={repo} items={items.filter((item) => item.repo === repo.id)} selection={selection} open={setSelection} now={now} />
+        ))}
       </div>
     </div>
   );
+}
+
+function Sidebar() {
+  const [unfolded, setUnfolded] = useShared<boolean>(LAYOUT_BOARD, false);
+  // Times on the cards turn from a clock into a day at midnight.
+  const now = useNow(60_000, true);
+  useEffect(() => {
+    if (!homed) {
+      homed = true;
+      setUnfolded(true);
+    }
+  }, [setUnfolded]);
+  // B folds and unfolds the board, unless the person is typing.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'b' && event.key !== 'B') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+      event.preventDefault();
+      setUnfolded((current) => !current);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [setUnfolded]);
+  return unfolded ? <BoardView now={now} /> : <Folded now={now} />;
 }
 
 export default definePlugin({ slot: 'workbench.sidebar@1', component: local(Sidebar) });

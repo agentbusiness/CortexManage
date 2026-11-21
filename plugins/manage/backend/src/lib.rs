@@ -3,15 +3,18 @@
 //! package for its hold to end, is built by a runner under the watch, proven by the gates, landed
 //! and handed to the release train. The plugin never edits code: a CortexCode on a runner does.
 
+pub mod board;
 pub mod diff;
 pub mod gates;
 pub mod graph;
 pub mod inbox;
 pub mod job;
+pub mod ledger;
 pub mod link;
 pub mod packages;
 pub mod pipeline;
 pub mod policy;
+pub mod reports;
 pub mod service;
 pub mod store;
 pub mod texts;
@@ -43,7 +46,9 @@ pub const PROVIDES: &[&str] = &[
     methods::DISCOVER_TREE,
     methods::RUNNER_RELEASE,
     methods::RUNNER_GET,
+    methods::BOARD_ITEMS,
     methods::SHARES,
+    cc_protocol::contracts::reports::methods::SEND,
 ];
 
 /// Event topics this plugin wants: plugins coming (back) into service, and trains that ran.

@@ -9,14 +9,15 @@
 use crate::link::{LinkEvent, Links};
 use crate::store::{Data, RepoRec, ReqRec, Store};
 use crate::texts::Texts;
-use crate::{graph, inbox, job, packages, pipeline, policy, words};
+use crate::{board, graph, inbox, job, packages, pipeline, policy, words};
 use cc_protocol::contracts::frame::{self as fc, SessionCreateParams, SessionKind, SessionUpdateParams};
 use cc_protocol::contracts::lifecycle::{ProbeCheck, ProbeReport};
 use cc_protocol::contracts::manage::{
-    Changed, DecideParams, DiscoverParams, From, Package, PackageEditParams, PackageView, Point, Policy, Repo, RepoCreateParams, RepoEditParams, Request, RequestCreateParams,
+    Changed, DecideParams, DiscoverParams, From, Package, PackageEditParams, PackageView, Policy, Repo, RepoCreateParams, RepoEditParams, Request, RequestCreateParams,
     RequestEditParams, RequestListParams, RequestView, SayParams, Tier, ended, methods, stage, topics,
 };
 use cc_protocol::contracts::memory::{GraphLayer, GraphPutParams, GraphQueryParams, GraphQueryResult, GraphRetireParams, MachineInfo, methods as memory_methods};
+use cc_protocol::contracts::reports;
 use cc_protocol::contracts::runner::{self, Facts};
 use cc_protocol::contracts::service::{Audience, Caller, Share, ShareList, SharedMethod};
 use cc_protocol::contracts::train;
@@ -138,6 +139,11 @@ impl Manager {
     /// Call the runner at `node`.
     pub async fn runner<T: DeserializeOwned>(&self, node: &str, method: &str, params: Value, limit: Duration) -> Result<T, RpcError> {
         self.links.call(self.ctx()?, node, method, params, limit).await
+    }
+
+    /// Whether something waits for a plugin or a computer that did not answer (`runner:<package>`).
+    pub fn waits_on(&self, key: &str) -> bool {
+        lock(&self.waiting).contains_key(key)
     }
 
     pub fn changed(&self, what: &str, id: &str, repo: &str) {
@@ -303,6 +309,7 @@ impl Manager {
             }
             // `send` changes nothing while nobody listens; this always sets the value.
             manager.loaded.send_replace(true);
+            inbox::settle_old(&manager).await;
             manager.go_on();
             manager.clock().await;
         });
@@ -445,7 +452,8 @@ impl Manager {
 
     /// A computer to build a repository on, as (mesh node, name). The one set for the repository;
     /// with none set, any CortexCode of the mesh: a reachable member whose card says its app is
-    /// CortexCode and that answers `runner.list`, this computer's first, then by node. `free`:
+    /// CortexCode and that answers `runner.list`, one that holds the repository first, then this
+    /// computer's, then by node. `free`:
     /// one with no job running (a job is about to start); otherwise any that answers (a read).
     /// When none answers and none runs here, the CortexCode on this computer is started.
     pub async fn pick_runner(&self, repo: &Repo, free: bool) -> Result<(String, String), RpcError> {
@@ -456,6 +464,9 @@ impl Manager {
         struct Jobs {
             #[serde(default)]
             jobs: Vec<Facts>,
+            /// The sources it holds a mirror of.
+            #[serde(default)]
+            repos: Vec<String>,
         }
         let peers: Value = self.peer("mesh.peers", json!({})).await?;
         let mut found: Vec<(bool, String, String)> = Vec::new();
@@ -471,7 +482,9 @@ impl Manager {
         }
         // This computer's first, then a fixed order.
         found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        // A free one that already holds the repository first, else the first free one.
         let (mut answered, mut here) = (0, 0);
+        let mut first: Option<(String, String)> = None;
         for (local, node, name) in &found {
             here += usize::from(*local);
             self.links.ensure(self.ctx()?, node);
@@ -479,8 +492,14 @@ impl Manager {
             answered += 1;
             if !free || !list.jobs.iter().any(|job| job.state == "running") {
                 let name = if *local { self.t("runner_here", &[]) } else { name.clone() };
-                return Ok((node.clone(), name));
+                if list.repos.iter().any(|url| url.trim() == repo.source.url.trim()) {
+                    return Ok((node.clone(), name));
+                }
+                first.get_or_insert((node.clone(), name));
             }
+        }
+        if let Some(first) = first {
+            return Ok(first);
         }
         if answered > 0 {
             return Err(RpcError::new(codes::UNAVAILABLE, self.t("runner_all_busy", &[])));
@@ -540,6 +559,7 @@ impl Manager {
             methods::REPO_CREATE => self.repo_create(parse_params(params)?).await,
             methods::REPO_EDIT => self.repo_edit(parse_params(params)?),
             methods::REQUEST_CREATE => self.request_create(params).await,
+            reports::methods::SEND => crate::reports::send(self, params).await,
             methods::REQUEST_GET => to_value(&self.request_view_of(&id_of(&params)?)?),
             methods::REQUEST_LIST => self.request_list(parse_params(params)?),
             methods::REQUEST_EDIT => self.request_edit(parse_params(params)?).await,
@@ -579,6 +599,7 @@ impl Manager {
             methods::DISCOVER_READ | methods::DISCOVER_SEARCH | methods::DISCOVER_TREE => self.discover(method, parse_params(params)?).await,
             methods::RUNNER_RELEASE => self.runner_release(params).await,
             methods::RUNNER_GET => self.runner_get(params).await,
+            methods::BOARD_ITEMS => Ok(board::items(self).await),
             other => Err(RpcError::unknown_method(other)),
         }
     }
@@ -705,10 +726,24 @@ impl Manager {
         // A call through the mesh carries who asked (stamped by the mesh): that is who it is from.
         let caller: Option<Caller> = params.get("caller").filter(|caller| !caller.is_null()).and_then(|caller| serde_json::from_value(caller.clone()).ok());
         let params: RequestCreateParams = parse_params(params)?;
-        let text = params.text.trim().to_owned();
-        if text.is_empty() {
+        let from = match caller {
+            Some(caller) => From { kind: "app".into(), name: if caller.name.is_empty() { caller.app } else { format!("{} on {}", caller.app, caller.name) }, node: caller.node },
+            None if params.from.kind.is_empty() => From { kind: "person".into(), ..params.from.clone() },
+            None => params.from.clone(),
+        };
+        self.open_request(params, from, None).await
+    }
+
+    /// Open a request and start its flow; `report` is the failure an app reported (its
+    /// fingerprint, how often and when last it was seen).
+    pub(crate) async fn open_request(self: &Arc<Self>, params: RequestCreateParams, from: From, report: Option<(String, u64, u64)>) -> Result<Value, RpcError> {
+        let said = params.text.trim().to_owned();
+        if said.is_empty() && params.attachments.is_empty() {
             return Err(RpcError::invalid_params("a request needs a text: what should change"));
         }
+        // What the model reads: the words, and what was attached (pasted text whole, files by name
+        // and where they are).
+        let text = with_files(&said, &params.attachments);
         if params.repo == "standard" {
             return Err(RpcError::invalid_params("the standard charter is changed through a standard request in a repository"));
         }
@@ -718,7 +753,8 @@ impl Manager {
         }
         let project_id = self.project(&repo).await?;
         let title = match params.title.trim() {
-            "" => first_line(&text),
+            "" if said.is_empty() => params.attachments.first().map(|file| file.name.clone()).unwrap_or_default(),
+            "" => first_line(&said),
             title => title.to_owned(),
         };
         let session = self
@@ -735,11 +771,7 @@ impl Manager {
             })
             .await?;
         let id = self.store.next_request_id(&repo.repo.id).ok_or_else(|| RpcError::not_found(format!("no repository `{}`", params.repo)))?;
-        let from = match caller {
-            Some(caller) => From { kind: "app".into(), name: if caller.name.is_empty() { caller.app } else { format!("{} on {}", caller.app, caller.name) }, node: caller.node },
-            None if params.from.kind.is_empty() => From { kind: "person".into(), ..params.from },
-            None => params.from,
-        };
+        let (fingerprint, seen, seen_last_ms) = report.unwrap_or_default();
         let now = now_ms();
         let rec = ReqRec {
             r: Request {
@@ -752,6 +784,9 @@ impl Manager {
                 stage: stage::ARRIVED.into(),
                 created_ms: now,
                 updated_ms: now,
+                fingerprint,
+                seen,
+                seen_last_ms,
                 ..Request::default()
             },
             stages: vec![(stage::ARRIVED.into(), now)],
@@ -760,7 +795,11 @@ impl Manager {
             ..ReqRec::default()
         };
         self.store.put_request(rec);
-        self.entry(&session.id, fc::kinds::USER_MESSAGE, json!({"text": text})).await;
+        let mut first = json!({"text": said});
+        if !params.attachments.is_empty() {
+            first["attachments"] = json!(params.attachments);
+        }
+        self.entry(&session.id, fc::kinds::USER_MESSAGE, first).await;
         self.changed("request", &id, &repo.repo.id);
         pipeline::spawn(self, &id);
         to_value(&self.request_view_of(&id)?)
@@ -781,22 +820,33 @@ impl Manager {
 
     async fn request_edit(self: &Arc<Self>, params: RequestEditParams) -> Result<Value, RpcError> {
         let rec = self.request(&params.id)?;
-        if !rec.r.ended_as.is_empty() {
+        // A released request can still be taken off the board.
+        let released = rec.r.ended_as == ended::RELEASED;
+        if !rec.r.ended_as.is_empty() && !(params.withdraw && released) {
             return Err(RpcError::new(codes::CONFLICT, format!("{} is closed ({})", rec.r.id, rec.r.ended_as)));
         }
         let building = matches!(rec.r.stage.as_str(), stage::BUILDING | stage::PROVING);
-        let landed = matches!(rec.r.stage.as_str(), stage::LANDED | stage::SOAKING | stage::RELEASED);
+        let landed = released || matches!(rec.r.stage.as_str(), stage::LANDED | stage::SOAKING | stage::RELEASED);
         if params.withdraw {
             if landed {
-                return Err(RpcError::new(codes::CONFLICT, self.t("withdraw_landed", &[])));
+                // Its code is on the main line already: only the card goes.
+                self.store.update_request(&rec.r.id, |rec| rec.hidden = true);
+                self.changed("request", &rec.r.id, &rec.r.repo);
+                return to_value(&self.request_view_of(&params.id)?);
             }
             if building {
                 let alone = self.store.read(|data| data.packages.get(&rec.r.package).is_none_or(|package| package.requests.len() <= 1));
-                if !alone {
-                    return Err(RpcError::new(codes::CONFLICT, self.t("withdraw_bundled", &[])));
-                }
-                if let Some(package) = self.store.update_package(&rec.r.package, |package| package.stage = ended::WITHDRAWN.into()) {
+                if alone {
+                    if let Some(package) = self.store.update_package(&rec.r.package, |package| package.stage = ended::WITHDRAWN.into()) {
+                        job::cancel(self, &package);
+                    }
+                } else if let Ok(package) = self.package(&rec.r.package) {
+                    // Built with others: the job stops, this one comes out, the others are
+                    // planned again without it.
                     job::cancel(self, &package);
+                    self.store.update_request(&rec.r.id, |rec| rec.r.package.clear());
+                    self.store.update_package(&package.id, |package| package.requests.retain(|member| *member != rec.r.id));
+                    packages::give_back(self, &package.id, &self.t("given_back_withdrawn", &[("id", &rec.r.id)])).await;
                 }
             } else {
                 packages::take_out(self, &rec.r.id);
@@ -811,6 +861,43 @@ impl Manager {
             self.changed("request", &rec.r.id, &rec.r.repo);
             self.changed("inbox", "", "");
             return to_value(&self.request_view_of(&params.id)?);
+        }
+        if let Some(start) = params.start {
+            let package = self.store.read(|data| data.packages.get(&rec.r.package).cloned());
+            match package {
+                // It has a package: start it now, or let it wait (a running job pauses).
+                Some(package) if matches!(package.stage.as_str(), stage::HELD | stage::BUILDING | stage::PROVING) => {
+                    let edit = PackageEditParams { id: package.id.clone(), start_now: start, stop: !start, ..PackageEditParams::default() };
+                    packages::edit(self, &edit).await?;
+                    // The person's word stays with the requests: started work shows as coding
+                    // until it builds, paused work as waiting.
+                    let wish = if start { "now" } else { "wait" };
+                    for member in &package.requests {
+                        self.store.update_request(member, |rec| rec.start_wish = wish.to_owned());
+                    }
+                }
+                Some(_) => {}
+                // Not planned yet: the wish is kept and the package it gets follows it.
+                None => {
+                    let wish = if start { "now" } else { "wait" };
+                    self.store.update_request(&rec.r.id, |rec| rec.start_wish = wish.to_owned());
+                }
+            }
+            self.changed("request", &rec.r.id, &rec.r.repo);
+        }
+        if params.replan {
+            self.store.update_request(&rec.r.id, |rec| rec.start_wish.clear());
+            let note = self.t("note_moved_back", &[]);
+            if building {
+                let package = self.store.read(|data| data.packages.get(&rec.r.package).cloned());
+                if let Some(package) = package {
+                    let ask = crate::store::AskRec { action: "give_back".into(), note: note.clone(), ..crate::store::AskRec::default() };
+                    job::tell(self, &package.id, job::Msg::Decided { ask: Box::new(ask) });
+                }
+            } else if !landed {
+                pipeline::again(self, &rec.r.id, &note, false);
+            }
+            self.changed("request", &rec.r.id, &rec.r.repo);
         }
         if let Some(urgent) = params.urgent {
             let updated = self.store.update_request(&rec.r.id, |rec| {
@@ -860,7 +947,7 @@ impl Manager {
     /// The person wrote in a request's thread.
     async fn request_say(self: &Arc<Self>, params: SayParams) -> Result<Value, RpcError> {
         let rec = self.request(&params.request)?;
-        let text = params.text.trim().to_owned();
+        let text = with_files(params.text.trim(), &params.attachments);
         if text.is_empty() {
             return Err(RpcError::invalid_params("nothing was said"));
         }
@@ -952,40 +1039,12 @@ impl Manager {
         };
 
         let started = std::time::Instant::now();
-        let globs = |paths: &[&str]| paths.iter().map(|glob| (*glob).to_owned()).collect::<Vec<_>>();
-        let policy = Policy {
-            major_paths: globs(&["protocol/**", "frame/**", "**/pairing*", "AGENTS.md"]),
-            minor_paths: globs(&["plugins/*/ui/**", "plugins/*/backend/data/**", "**/texts.toml"]),
-            ..Policy::default()
-        };
-        let point = |touches: &[&str], lines: u32| Point { n: 1, title: "probe".into(), touches: touches.iter().map(|touch| (*touch).to_owned()).collect(), limit_lines: lines, ..Point::default() };
-        let cases: [(&str, Vec<Point>, Vec<String>, Tier); 7] = [
-            ("a plugin's backend source is safe", vec![point(&["plugins/mesh/backend/src/net.rs"], 40)], vec![], Tier::Safe),
-            ("a plugin's UI is minor", vec![point(&["plugins/updater/ui/band/src/index.tsx"], 40)], vec![], Tier::Minor),
-            ("a texts file is minor", vec![point(&["plugins/scheduler/backend/data/texts.toml"], 10)], vec![], Tier::Minor),
-            ("the protocol is major", vec![point(&["protocol/src/contracts/mesh.rs"], 40)], vec![], Tier::Major),
-            ("a pairing file is major wherever it is", vec![point(&["plugins/mesh/backend/src/pairing.rs"], 40)], vec![], Tier::Major),
-            ("a standard path is major", vec![point(&["plugins/theme-cortex/ui/theme/src/x.css"], 10)], vec!["plugins/theme-cortex/ui/theme/src/x.css".into()], Tier::Major),
-            ("a big change in safe files is still safe", vec![point(&["plugins/mesh/backend/src/a.rs"], 1500), point(&["plugins/mesh/backend/src/b.rs"], 1200)], vec![], Tier::Safe),
-        ];
-        let wrong: Vec<String> = cases
-            .iter()
-            .filter_map(|(name, points, standard, want)| {
-                let got = policy::floor(&policy, points, standard, &self.texts);
-                (got.tier != *want || got.reasons.is_empty()).then(|| format!("{name}: got {}", got.tier.as_str()))
-            })
-            .collect();
-        let many: Vec<Point> = (0..13).map(|n| Point { n, ..point(&["plugins/mesh/backend/src/a.rs"], 10) }).collect();
-        // Many points in safe files: still safe. Size raises nothing.
-        let many_ok = policy::floor(&policy, &many, &[], &self.texts).tier == Tier::Safe;
-        check("policy.floor", wrong.is_empty() && many_ok, if wrong.is_empty() { format!("{} cases", cases.len() + 1) } else { wrong.join("; ") }, started);
-
-        let started = std::time::Instant::now();
-        let hold_ok = policy::hold_until(&policy, Tier::Safe, false, 1_000, 1_000) == 1_000 + 120 * 60_000
-            && policy::hold_until(&policy, Tier::Minor, false, 1_000 + 23 * 3_600_000, 1_000) == 1_000 + 24 * 3_600_000
-            && policy::hold_until(&policy, Tier::Major, false, 1_000, 1_000) == 0
-            && policy::hold_until(&policy, Tier::Minor, true, 5_000, 1_000) == 5_000;
-        check("policy.hold", hold_ok, "safe by the clock, capped at the longest hold, major without a clock, urgent at once".into(), started);
+        let policy = Policy::default();
+        let hold_ok = policy::hold_until(&policy, Tier::Safe, false, 1_000) == 1_000 + 120 * 60_000
+            && policy::hold_until(&policy, Tier::Minor, false, 1_000) == 1_000 + 720 * 60_000
+            && policy::hold_until(&policy, Tier::Major, false, 1_000) == 0
+            && policy::hold_until(&policy, Tier::Minor, true, 5_000) == 5_000;
+        check("policy.hold", hold_ok, "safe and minor by the clock, major without a clock, urgent at once".into(), started);
 
         let started = std::time::Instant::now();
         let ids_ok = crate::store::request_id("CT", 142) == "CT-0142" && repo_id("Cortex Term") == "cortexterm";
@@ -1038,6 +1097,29 @@ impl Manager {
     }
 }
 
+/// Pasted text reaches the model whole up to this size (as in CortexCode); the rest stays in its
+/// file, whose path the text names.
+const PASTED_WHOLE_CHARS: usize = 24_000;
+
+/// A message as the model reads it: the words, then each attachment. Pasted text is put in whole;
+/// a file, an image or a folder is named with where it is.
+fn with_files(text: &str, files: &[cc_protocol::contracts::manage::RequestFile]) -> String {
+    let mut out = text.trim().to_owned();
+    for file in files {
+        if file.pasted_text {
+            let pasted = std::fs::read_to_string(&file.path).unwrap_or_default();
+            let mut shown: String = pasted.chars().take(PASTED_WHOLE_CHARS).collect();
+            if shown.len() < pasted.len() {
+                shown.push_str(&format!("\n… (the rest is in {})", file.path));
+            }
+            out.push_str(&format!("\n\nPasted text ({}):\n{}", file.name, shown.trim_end()));
+        } else {
+            out.push_str(&format!("\n\nAttached {} \"{}\": {}", if file.kind.is_empty() { "file" } else { &file.kind }, file.name, file.path));
+        }
+    }
+    out.trim().to_owned()
+}
+
 fn id_of(params: &Value) -> Result<String, RpcError> {
     params.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()).map(str::to_owned).ok_or_else(|| RpcError::invalid_params("`id` is needed"))
 }
@@ -1061,7 +1143,12 @@ fn first_line(text: &str) -> String {
 }
 
 pub fn request_view(data: &Data, rec: &ReqRec) -> RequestView {
-    RequestView { request: rec.r.clone(), word: words::request(data, rec), plan: data.plan(&rec.r.id).map(|plan| plan.plan.clone()), stages: rec.stages.clone() }
+    RequestView {
+        request: rec.r.clone(),
+        word: words::request(data, rec),
+        plan: data.plan(&rec.r.id).map(|plan| plan.plan.clone()),
+        stages: rec.stages.clone(),
+    }
 }
 
 pub fn package_view(data: &Data, package: &Package) -> PackageView {
@@ -1122,7 +1209,19 @@ pub fn shares() -> ShareList {
         ],
         audience: Audience::Apps,
     };
-    ShareList { shares: vec![share] }
+    let reports = Share {
+        service: reports::SERVICE.into(),
+        version: reports::VERSION,
+        title: "Reports".into(),
+        description: "An app hands over its own errors, warnings and metrics; CortexManage keeps them when it manages the app's repository.".into(),
+        methods: vec![method(
+            reports::methods::SEND,
+            "Rows of one table of one day about the calling app. Answers accepted when this CortexManage manages the sender's repository; otherwise ask the next one.",
+            json!({"type": "object", "properties": {"sender": {"type": "object"}, "table": {"type": "string"}, "part": {"type": "string"}, "day": {"type": "string"}, "rows": {"type": "array"}}, "required": ["sender", "table", "rows"]}),
+        )],
+        audience: Audience::Apps,
+    };
+    ShareList { shares: vec![share, reports] }
 }
 
 /// Standard base64, for the bytes of a piece of evidence.

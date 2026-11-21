@@ -64,7 +64,7 @@ struct State {
     /// When a plan was last asked for, so a view does not ask again and again.
     plan_asked: HashMap<String, u64>,
     /// Each repository's train time and when it was read.
-    train_at: HashMap<String, (u64, (u32, u32))>,
+    train_at: HashMap<String, (u64, when::Schedule)>,
     /// Repositories whose train is running now.
     running: HashSet<String>,
 }
@@ -197,7 +197,10 @@ impl Train {
         }
         self.ensure_loaded().await?;
         match method {
-            methods::GET => to_value(&self.view(&self.named(&params, "repo")?).await),
+            methods::GET => {
+                let after = params.get("after_ms").and_then(Value::as_u64).unwrap_or(0);
+                to_value(&self.view(&self.named(&params, "repo")?, after).await)
+            }
             methods::LIST => {
                 let repo = self.named(&params, "repo")?;
                 let releases: Vec<Release> = self.with(|state| state.releases.iter().rev().filter(|release| release.repo == repo).take(LISTED_RELEASES).cloned().collect());
@@ -306,7 +309,7 @@ impl Train {
     /// `train.skip`: the next train of the repository does not run.
     async fn skip(&self, repo: &str) {
         let at = self.train_at(repo).await;
-        let (day, _) = when::next(when::now_ms(), at, "");
+        let (day, _) = when::next_of(when::now_ms(), &at, "");
         let clock = self.with(|state| {
             let clock = state.clocks.entry(repo.to_owned()).or_default();
             clock.skip_day = day;
@@ -339,6 +342,7 @@ impl Train {
             // The person pressed Take back on the Releases page; the kind is left to the assessment.
             from: Origin { kind: "person".into(), name: "Releases".into(), node: String::new() },
             urgent: Some(true),
+            attachments: Vec::new(),
         };
         let opened = match self.ctx() {
             Ok(ctx) => Host::new(ctx).effect(manage::REQUEST_CREATE, to_value(&params)?).await,
@@ -366,9 +370,9 @@ impl Train {
 
     // ---- the view ------------------------------------------------------------------------------
 
-    /// The repository's train time (`manage.repo.get` → `policy.train_at`), `03:00` when it cannot
-    /// be read.
-    async fn train_at(&self, repo: &str) -> (u32, u32) {
+    /// The repository's train schedule (`manage.repo.get` → `policy.train_every`, `train_day`,
+    /// `train_at`); daily at 03:00 when it cannot be read.
+    async fn train_at(&self, repo: &str) -> when::Schedule {
         let now = when::now_ms();
         if let Some(at) = self.with(|state| state.train_at.get(repo).filter(|(read_ms, _)| now.saturating_sub(*read_ms) < TRAIN_AT_FRESH_MS).map(|(_, at)| *at)) {
             return at;
@@ -379,25 +383,30 @@ impl Train {
         };
         match answer {
             Ok(found) => {
-                let at = when::parse_at(found.pointer("/policy/train_at").and_then(Value::as_str).unwrap_or_default());
+                let at = when::Schedule::parse(
+                    found.pointer("/policy/train_every").and_then(Value::as_str).unwrap_or_default(),
+                    found.pointer("/policy/train_day").and_then(Value::as_u64).unwrap_or(0) as u32,
+                    found.pointer("/policy/train_at").and_then(Value::as_str).unwrap_or_default(),
+                );
                 self.with(|state| state.train_at.insert(repo.to_owned(), (now, at)));
                 at
             }
             Err(error) => {
                 tracing::debug!(repo, error = %error.message, "the repository's train time could not be read");
                 // The last one read is better than the default while the manage plugin is away.
-                self.with(|state| state.train_at.get(repo).map(|(_, at)| *at)).unwrap_or_else(|| when::parse_at(""))
+                self.with(|state| state.train_at.get(repo).map(|(_, at)| *at)).unwrap_or_else(|| when::Schedule::parse("", 0, ""))
             }
         }
     }
 
     /// `train.get`.
-    async fn view(self: &Arc<Self>, repo: &str) -> TrainView {
+    /// With `after_ms`, `next_ms` is the first train after that moment instead of after now.
+    async fn view(self: &Arc<Self>, repo: &str, after_ms: u64) -> TrainView {
         let at = self.train_at(repo).await;
         let now = when::now_ms();
         let (view, ask_plan) = self.with(|state| {
             let skip_day = state.clocks.get(repo).map(|clock| clock.skip_day.clone()).unwrap_or_default();
-            let (_, next_ms) = when::next(now, at, &skip_day);
+            let (_, next_ms) = when::next_of(now.max(after_ms), &at, &skip_day);
             let mut released: Vec<Release> = state.releases.iter().rev().filter(|release| release.repo == repo).take(SHOWN_RELEASES).cloned().collect();
             released.sort_by_key(|release| std::cmp::Reverse(release.ms));
             let shown: HashSet<&str> = released.iter().map(|release| release.id.as_str()).collect();
@@ -663,10 +672,8 @@ impl Train {
         let mut leaving = Vec::new();
         for repo in waiting {
             let at = self.train_at(&repo).await;
-            let (today, leaves) = when::today(now, at);
-            if now < leaves {
-                continue;
-            }
+            // The latest moment the schedule has reached: one train for each.
+            let Some((today, _)) = when::current(now, &at) else { continue };
             // The day is written before anything runs: one train per day, also after a restart or
             // a failure. A package that becomes ready later in the day waits for tomorrow's train.
             let claimed = self.with(|state| {

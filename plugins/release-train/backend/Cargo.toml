@@ -20,6 +20,7 @@ path = "src/main.rs"
 
 [dependencies]
 cc-protocol = { path = "../../../protocol", features = ["host", "manage", "memory", "runner", "train"] }
+cc-stats-kit = { path = "../../../stats-kit" }
 # Local time: the train leaves at a time of day on this computer's clock.
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 serde = { version = "1.0.228", features = ["derive"] }

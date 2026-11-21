@@ -1,6 +1,6 @@
 /**
  * A repository's Runner page: the computer that builds it, whether it answers, the jobs it holds,
- * (the repository's own settings are in Settings > Repositories).
+ * (the repository's own settings are in its pop-up on the board).
  */
 
 import { useQuery } from '@cortex/sdk';

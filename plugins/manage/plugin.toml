@@ -25,19 +25,23 @@ provides = [
   "manage.package.get", "manage.package.list", "manage.package.edit",
   "manage.decide", "manage.inbox.list", "manage.hold.get", "manage.hold.edit", "manage.evidence.read",
   "manage.discover.read", "manage.discover.search", "manage.discover.tree",
-  "manage.runner.release", "manage.runner.get", "manage.shares",
+  "manage.runner.release", "manage.runner.get",
+  "manage.board.items",
+  "manage.shares",
+  "manage.reports.send",
 ]
 publishes = ["manage.changed", "manage.watch"]
 subscribes = ["plugin.state", "plugin.swapped", "train.released"]
 uses = [
   "memory.graph.put", "memory.graph.retire", "memory.graph.query", "memory.graph.machine",
+  "memory.stream.append", "memory.stream.read", "memory.stream.topics",
   "frame.project.open", "frame.session.create", "frame.session.update", "frame.journal.append", "frame.journal.patch",
   "mesh.link", "mesh.peers",
   "chatflow-manage.assess", "chatflow-manage.match", "chatflow-manage.plan", "chatflow-manage.validate",
   "chatflow-manage.drift", "chatflow-manage.converge", "chatflow-manage.digest", "chatflow-manage.why",
   "charter.get", "charter.rules_for", "charter.check",
   "standard.touches", "standard.paths",
-  "train.landed",
+  "train.landed", "train.get",
   "notify.send",
 ]
 
@@ -59,23 +63,11 @@ dir = "ui/centre"
 id = "manage.centre"
 slot = "workbench.chat@1"
 
-# Right pane: the request's card.
+# Right pane: Details of the open request.
 [[ui.package]]
 dir = "ui/card"
 id = "manage.card"
 slot = "pane.card@1"
-
-# Right pane: the watch of a running job.
-[[ui.package]]
-dir = "ui/watch"
-id = "manage.watch"
-slot = "pane.watch@1"
-
-# Right pane: gates and what the walks left behind.
-[[ui.package]]
-dir = "ui/evidence"
-id = "manage.evidence"
-slot = "pane.evidence@1"
 
 # The band: "Waits on you" with the count line.
 [[ui.package]]
@@ -89,11 +81,6 @@ dir = "ui/hold"
 id = "manage.hold"
 slot = "workbench.band@1"
 
-# Settings: repositories, their runner and policy.
-[[ui.package]]
-dir = "ui/settings"
-id = "manage.settings"
-slot = "settings.manage@1"
 
 # The plugin's texts (steer sentences, inbox words, stage lines): packed at the same path; the app
 # reads and edits them live in the live folder (<home>/live/plugins/manage/backend/data).

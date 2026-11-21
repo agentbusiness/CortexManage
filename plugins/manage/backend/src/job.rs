@@ -15,7 +15,7 @@
 use crate::gates::{self, Outcome, Which};
 use crate::inbox::{self, NewAsk};
 use crate::packages::{self, Joined};
-use crate::service::{Manager, RUNNER_BUILD, RUNNER_CALL, RUNNER_LAND, RUNNER_PREPARE};
+use crate::service::{Manager, RUNNER_CALL, RUNNER_LAND, RUNNER_PREPARE};
 use crate::store::AskRec;
 use crate::{diff, pipeline, policy};
 use cc_protocol::contracts::charter;
@@ -42,16 +42,16 @@ const COOLDOWN_MS: u64 = 180_000;
 /// After a restart, an old "done" or "stopped" is not believed for this long unless the job was
 /// seen running in between.
 const SETTLE_MS: u64 = 60_000;
-/// W1, W2, W3: the thresholds of spec 01 §5.2.
+/// W1, W2, W3: what the builder does, never how long or how much: the same failure, the same
+/// call, reading without writing. No time, token, line or file count stops a job.
 const SAME_FAILURE: u32 = 3;
 const SAME_CALL: u32 = 4;
 const CALLS_WITHOUT_EDIT: u32 = 10;
-const IDLE_MS: u64 = 10 * 60_000;
 /// How often a task is started again because its context was full before a person is asked.
 const CONTEXT_RESTARTS: u32 = 2;
 /// How often a landing is tried again after a rebase before a person is asked.
 const LAND_TRIES: u32 = 3;
-const RULES: [&str; 8] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8"];
+const RULES: [&str; 7] = ["W1", "W2", "W3", "W4", "W5", "W6", "W8"];
 
 pub enum Msg {
     Beat(Box<Facts>),
@@ -205,25 +205,10 @@ pub fn dispatch(manager: &Arc<Manager>, id: &str) {
                         manager.unavailable(&key, method, &sessions, &error).await;
                     }
                     Fail::Ask(text) => {
-                        manager.settled(&key);
-                        let title = manager.store.read(|data| package.requests.first().and_then(|id| data.requests.get(id)).map(|rec| rec.r.title.clone()).unwrap_or_default());
-                        inbox::raise(
-                            &manager,
-                            NewAsk {
-                                kind: "stuck".into(),
-                                repo: package.repo.clone(),
-                                package: id.clone(),
-                                request: package.requests.first().cloned().unwrap_or_default(),
-                                subject: manager.t("subject_not_started", &[("title", &title)]),
-                                title,
-                                detail: text,
-                                actions: inbox::actions(&["rerun", "take_over", "decline"]),
-                                attempt: package.attempt,
-                                resume: "dispatch".into(),
-                                ..NewAsk::default()
-                            },
-                        )
-                        .await;
+                        // Nothing a person must decide: it is said in the thread once, and the
+                        // package is looked at again in a while (a runner may be set meanwhile).
+                        manager.store.update_package(&id, |package| package.hold_until_ms = now_ms() + 10 * 60_000);
+                        manager.unavailable(&key, "runner", &sessions, &RpcError::new(codes::UNAVAILABLE, text)).await;
                     }
                 }
             }
@@ -457,6 +442,7 @@ pub async fn released(manager: &Arc<Manager>, release: &train::Release) {
                 continue;
             };
             manager.entry(&rec.r.session_id, kinds::STAGE, json!({"stage": stage::RELEASED, "text": text})).await;
+            crate::ledger::released(manager, &rec, &moved);
             manager.changed("request", request, &package.repo);
         }
         manager.changed("package", id, &package.repo);
@@ -712,9 +698,6 @@ impl Actor {
 
     fn strip(&self, package: &Package) -> Option<Strip> {
         let facts = self.facts.as_ref()?;
-        let policy = self.m.store.read(|data| data.repos.get(&package.repo).map(|rec| rec.repo.policy.clone())).unwrap_or_default();
-        // The one guard every job has: its longest time (size has no limit).
-        let budget = policy::budget(&policy, Tier::Major);
         Some(Strip {
             task: facts.task,
             tasks: facts.tasks,
@@ -725,7 +708,7 @@ impl Actor {
             limit_lines: 0,
             in_scope: facts.out_of_scope.is_empty(),
             minutes: facts.minutes,
-            limit_minutes: budget[0],
+            limit_minutes: 0,
             steered: self.steered,
             restarted: self.restarted,
             now: facts.now.clone(),
@@ -785,6 +768,11 @@ impl Actor {
 
     /// Stop the work and ask a person.
     async fn ask(&mut self, kind: &str, subject_key: &str, detail: &str, actions: &[&str], resume: &str) {
+        // Only a major change asks a person. Work that cannot go on is planned again.
+        if kind == "stuck" {
+            self.give_back(detail).await;
+            return;
+        }
         self.phase = Phase::Waiting;
         let Some(package) = self.package() else { return };
         let title = self.m.store.read(|data| package.requests.first().and_then(|id| data.requests.get(id)).map(|rec| rec.r.title.clone()).unwrap_or_default());
@@ -805,6 +793,20 @@ impl Actor {
             },
         )
         .await;
+    }
+
+    /// The job cannot go on: it stops, its worktree goes, and its requests are planned again
+    /// with what went wrong. Nothing is declined and no person is asked.
+    async fn give_back(&mut self, why: &str) {
+        self.stop_job().await;
+        let job_id = self.package().map(|package| package.job_id).unwrap_or_default();
+        if !job_id.is_empty()
+            && let Err(error) = self.call::<Value>(runner::methods::REMOVE, json!({"job_id": job_id}), RUNNER_CALL).await
+        {
+            tracing::warn!(package = %self.id, error = %error.message, "the runner did not remove the worktree");
+        }
+        packages::give_back(&self.m, &self.id, why).await;
+        self.done = true;
     }
 
     // ---- calls to the runner -----------------------------------------------------------------
@@ -980,25 +982,9 @@ impl Actor {
 
     async fn rules(&mut self, facts: &Facts) {
         let Some(package) = self.package() else { return };
-        let Some(repo) = self.repo(&package) else { return };
         let (standard_change, charter_change) = special(&self.m, &package);
         let task = facts.task.max(1);
         let next = self.title(task);
-        // W7: a runaway guard, the same for every job: the longest time and the most tokens the
-        // policy allows any job. How many lines a change has says nothing about how safe it is,
-        // so size stops nothing and changes no rating.
-        let limit = policy::budget(&repo.policy, Tier::Major);
-        if facts.minutes > limit[0] || facts.tokens > limit[1] {
-            let fact = self.m.t(
-                "fact_w7",
-                &[("minutes", &facts.minutes.to_string()), ("limit_minutes", &limit[0].to_string()), ("tokens", &facts.tokens.to_string()), ("limit_tokens", &limit[1].to_string())],
-            );
-            self.stop_job().await;
-            self.intervene("W7", &fact, "stop", "", task).await;
-            let detail = self.m.t("detail_budget", &[("task", &self.title(task)), ("fact", &fact)]);
-            self.ask("stuck", "subject_stuck", &detail, &["rerun", "take_over", "decline"], &format!("task:{task}")).await;
-            return;
-        }
         // W5: a protected file changed in a job that may not change it. No steer: the checkpoint
         // is restored by starting the task again, and a second time a person looks.
         if !standard_change && !charter_change && !facts.protected_changed.is_empty() {
@@ -1009,7 +995,6 @@ impl Actor {
             return;
         }
         let file = facts.out_of_scope.first().cloned().unwrap_or_default();
-        let minutes = (facts.idle_ms / 60_000).to_string();
         let checks: [(&str, bool, String, String); 4] = [
             ("W4", !facts.out_of_scope.is_empty(), self.m.t("fact_w4", &[("file", &facts.out_of_scope.join(", "))]), self.m.t("steer_w4", &[("file", &file), ("next", &next)])),
             (
@@ -1026,9 +1011,9 @@ impl Actor {
             ),
             (
                 "W3",
-                facts.calls_since_edit >= CALLS_WITHOUT_EDIT || facts.idle_ms >= IDLE_MS,
-                self.m.t("fact_w3", &[("calls", &facts.calls_since_edit.to_string()), ("minutes", &minutes)]),
-                self.m.t("steer_w3", &[("calls", &facts.calls_since_edit.to_string()), ("minutes", &minutes), ("next", &next)]),
+                facts.calls_since_edit >= CALLS_WITHOUT_EDIT,
+                self.m.t("fact_w3", &[("calls", &facts.calls_since_edit.to_string())]),
+                self.m.t("steer_w3", &[("calls", &facts.calls_since_edit.to_string()), ("next", &next)]),
             ),
         ];
         for (rule, on, fact, steer) in checks {
@@ -1196,16 +1181,7 @@ impl Actor {
             }
             proposed.push(point);
         }
-        // The plan as it would be: what is done already, and the proposed rest.
-        let mut whole: Vec<Point> = self.points.iter().map(|joined| joined.point.clone()).filter(|point| point.n < facts.task.max(1)).collect();
-        whole.extend(proposed.iter().cloned());
-        let mut touches: Vec<String> = whole.iter().flat_map(|point| point.touches.iter().cloned()).collect();
-        touches.sort();
-        touches.dedup();
-        let Ok(standard_paths) = pipeline::standard_touches(&self.m, &repo, &touches).await else { return };
-        let floor = policy::floor(&repo.policy, &whole, &standard_paths, &self.m.texts);
-        let rises = floor.tier > package.tier;
-        let accept = all_kept && !rises;
+        let accept = all_kept;
         let answer = runner::ReplanAnswer { job_id: package.job_id.clone(), attempt: package.attempt, accept };
         if let Err(error) = self.call::<Value>(runner::methods::REPLAN_ANSWER, json!(answer), RUNNER_CALL).await {
             tracing::warn!(package = %self.id, error = %error.message, "the replan was not answered; it is answered at the next beat");
@@ -1218,64 +1194,8 @@ impl Actor {
             self.intervene("replan", &replan.found, "note", &self.m.t("replan_accepted", &[("count", &replan.tasks.len().to_string())]), task).await;
             return;
         }
-        let why = if rises { self.m.t("replan_refused_tier", &[("tier", floor.tier.as_str())]) } else { self.m.t("replan_refused", &[]) };
+        let why = self.m.t("replan_refused", &[]);
         self.intervene("replan", &replan.found, "refuse", &why, task).await;
-        if rises {
-            self.raise_tier(floor).await;
-        }
-    }
-
-    /// The work showed that the change is bigger than its tier allows: the package is assessed
-    /// upward, the job stops, and the package is held again by the new tier's rule.
-    async fn raise_tier(&mut self, floor: policy::Floor) {
-        self.stop_job().await;
-        let Some(package) = self.package() else { return };
-        let Some(repo) = self.repo(&package) else { return };
-        let now = now_ms();
-        self.m.store.update_package(&self.id, |package| {
-            package.tier = floor.tier;
-            package.urgent = package.urgent && floor.tier != Tier::Major;
-            package.hold_until_ms = policy::hold_until(&repo.policy, floor.tier, package.urgent, now, now);
-            package.held_since_ms = now;
-        });
-        for request in &package.requests {
-            self.m.store.update_request(request, |rec| {
-                rec.r.tier_floor = rec.r.tier_floor.max(floor.tier);
-                for reason in &floor.reasons {
-                    if !rec.r.tier_reasons.contains(reason) {
-                        rec.r.tier_reasons.push(reason.clone());
-                    }
-                }
-                pipeline::settle_urgent(rec);
-            });
-        }
-        set_stage(&self.m, &self.id, stage::HELD).await;
-        let line = self.m.t("pkg_reassessed", &[("package", &self.id), ("tier", floor.tier.as_str())]);
-        let sessions = self.m.store.read(|data| data.sessions_of(&package));
-        for session in &sessions {
-            self.m.line(session, &line).await;
-        }
-        if floor.tier == Tier::Major {
-            let title = self.m.store.read(|data| package.requests.first().and_then(|id| data.requests.get(id)).map(|rec| rec.r.title.clone()).unwrap_or_default());
-            inbox::raise(
-                &self.m,
-                NewAsk {
-                    kind: "approve_plan".into(),
-                    repo: package.repo.clone(),
-                    package: self.id.clone(),
-                    request: package.requests.first().cloned().unwrap_or_default(),
-                    subject: self.m.t("subject_approve_plan", &[("title", &title)]),
-                    title,
-                    detail: floor.reasons.join(" "),
-                    actions: inbox::actions(&["approve", "send_back", "decline"]),
-                    attempt: package.attempt,
-                    ..NewAsk::default()
-                },
-            )
-            .await;
-        }
-        self.m.look_now();
-        self.done = true;
     }
 
     /// The run stopped. Why it stopped decides what happens next, one action per reason.
@@ -1366,23 +1286,26 @@ impl Actor {
             self.ask("approve_landing", "subject_approve_landing", &detail, &["approve", "send_back", "decline"], "land").await;
             return;
         }
-        if outcome.blocked && !self.blocked_ok && package.tier != Tier::Major {
-            let detail = self.m.t("detail_blocked_walk", &[("proof", &outcome.summary.join(" "))]);
-            self.ask("blocked_walk", "subject_blocked_walk", &detail, &["approve", "rerun", "decline"], "land").await;
-            return;
+        if outcome.blocked && !self.blocked_ok {
+            // A check nothing could perform does not hold the landing back; it is said in the thread.
+            self.blocked_ok = true;
+            let line = self.m.t("line_check_not_run", &[("proof", &outcome.summary.join(" "))]);
+            for session in self.m.store.read(|data| data.sessions_of(&package)) {
+                self.m.note(&session, &line).await;
+            }
         }
         self.land().await;
     }
 
-    /// A gate failed: the failing tasks start again with what was found, as many rounds as the
-    /// policy gives the tier. Then a person.
+    /// A check failed: the failing tasks start again with what was found. When the same work
+    /// fails its checks again, the request is planned again with the findings: another way, not
+    /// the same way once more.
     async fn rework_round(&mut self, failed: Vec<(u32, String)>) {
         let Some(package) = self.package() else { return };
-        let Some(repo) = self.repo(&package) else { return };
         let summary: Vec<String> = failed.iter().map(|(_, finding)| finding.clone()).collect();
-        if package.reworks >= policy::rework(&repo.policy, package.tier) {
-            let detail = self.m.t("detail_gates_failed", &[("rounds", &package.reworks.to_string()), ("findings", &summary.join(" "))]);
-            self.ask("stuck", "subject_stuck", &detail, &["rerun", "take_over", "decline"], "gates").await;
+        if package.reworks >= 1 {
+            let why = self.m.t("why_checks_failed", &[("findings", &summary.join(" "))]);
+            self.give_back(&why).await;
             return;
         }
         self.m.store.update_package(&self.id, |package| package.reworks += 1);
@@ -1488,18 +1411,14 @@ impl Actor {
         });
         inbox::close_where(&self.m, "policy", "landed", |ask| ask.ask.package == self.id);
         set_stage(&self.m, &self.id, stage::LANDED).await;
-        self.m.notify("done", &self.id, self.m.t("notify_landed", &[("id", &self.id)]), self.m.t("notify_landed_body", &[("commit", commit)]), repo.name.clone()).await;
-        // The soak build installs the package's parts into the owner's own apps. A failure is
-        // written down; the package has landed all the same.
-        let build = runner::BuildParams { job_id: package.job_id.clone(), attempt: package.attempt, app: app_of(&repo), parts: Vec::new(), soak: true };
-        let failure = match self.call::<runner::BuildAnswer>(runner::methods::BUILD, json!(build), RUNNER_BUILD).await {
-            Ok(answer) if answer.ok => None,
-            Ok(answer) => Some(answer.tail.join("\n")),
-            Err(error) => Some(error.message),
-        };
-        if let Some(tail) = failure {
-            gates::record(&self.m, &self.id, "build", "failed", vec![cc_protocol::contracts::manage::Finding { title: self.m.t("soak_build_failed", &[]), evidence: tail }]).await;
+        // What was done, for which symptoms: into the repository's ledger.
+        for request in &package.requests {
+            if let Ok(rec) = self.m.request(request) {
+                crate::ledger::landed(&self.m, &rec, commit);
+            }
         }
+        self.m.notify("done", &self.id, self.m.t("notify_landed", &[("id", &self.id)]), self.m.t("notify_landed_body", &[("commit", commit)]), repo.name.clone()).await;
+        // No time in the person's apps first: it goes with the repository's next release.
         tell_train(&self.m, &self.id).await;
         if let Err(error) = self.call::<Value>(runner::methods::REMOVE, json!({"job_id": package.job_id}), RUNNER_CALL).await {
             tracing::warn!(package = %self.id, error = %error.message, "the runner did not remove the worktree");
@@ -1524,6 +1443,11 @@ impl Actor {
                 let reason = if note.is_empty() { self.m.t("declined_by_you", &[]) } else { self.m.t("declined_by_you_note", &[("note", note)]) };
                 packages::end(&self.m, &self.id, &reason).await;
                 self.done = true;
+            }
+            // A question from before only a major change asked one: the work is planned again.
+            (_, "give_back") => {
+                let why = if note.is_empty() { ask.ask.why.clone() } else { note.to_owned() };
+                self.give_back(&why).await;
             }
             (_, "take_over") => {
                 // The person works on it themselves: the job stops and the package is theirs

@@ -96,7 +96,7 @@ pub async fn run(manager: &Arc<Manager>, package_id: &str, facts: &Facts, which:
         }};
     }
 
-    let whole: runner::DiffAnswer = match manager.runner(&node, runner::methods::DIFF, json!({"job_id": package.job_id, "whole": true}), RUNNER_CALL).await {
+    let whole: runner::DiffAnswer = match manager.runner(&node, runner::methods::DIFF, json!({"job_id": package.job_id, "whole": true, "limit": u32::MAX}), RUNNER_CALL).await {
         Ok(whole) => whole,
         Err(error) => wait_for!(runner::methods::DIFF, error),
     };

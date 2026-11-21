@@ -13,9 +13,6 @@ use cc_protocol::{RpcError, codes};
 use serde_json::json;
 use std::sync::Arc;
 
-/// A package holds at most this many requests.
-const MAX_REQUESTS: usize = 5;
-
 /// A kept point as the package's joined plan has it.
 #[derive(Debug, Clone)]
 pub struct Joined {
@@ -122,19 +119,15 @@ pub async fn place(manager: &Arc<Manager>, id: &str) {
     if rec.r.stage != stage::VALIDATED || !rec.r.ended_as.is_empty() {
         return;
     }
-    let Ok(repo) = manager.repo(&rec.r.repo) else { return };
     let kept = manager.store.read(|data| data.kept(id));
     // An urgent request never joins and nothing joins it; a standard change is always alone.
     let alone = rec.r.urgent || rec.r.kind == "standard";
     if !alone {
-        let now = now_ms();
-        let hold_max = u64::from(repo.repo.policy.hold_max_min) * 60_000;
         let candidates: Vec<(Package, Vec<Point>, Vec<ReqRec>)> = manager.store.read(|data| {
             let mut found: Vec<&Package> = data
                 .packages
                 .values()
                 .filter(|package| package.repo == rec.r.repo && package.stage == stage::HELD && !package.urgent && !has_standard(data, package))
-                .filter(|package| package.requests.len() < MAX_REQUESTS && now.saturating_sub(package.held_since_ms) < hold_max)
                 .collect();
             found.sort_by_key(|package| package.held_since_ms);
             found
@@ -225,7 +218,8 @@ async fn create(manager: &Arc<Manager>, id: &str) -> Option<String> {
         tier: rec.r.tier,
         urgent: rec.r.urgent,
         stage: stage::HELD.into(),
-        hold_until_ms: policy::hold_until(&repo.repo.policy, rec.r.tier, rec.r.urgent, now, now),
+        hold_until_ms: if rec.start_wish == "now" { now } else { policy::hold_until(&repo.repo.policy, rec.r.tier, rec.r.urgent, now) },
+        stopped: rec.start_wish == "wait",
         held_since_ms: now,
         parts: rec.r.parts.clone(),
         created_ms: now,
@@ -251,7 +245,6 @@ async fn create(manager: &Arc<Manager>, id: &str) -> Option<String> {
 /// tier's time, never past the longest hold since the package was first held.
 async fn join(manager: &Arc<Manager>, package_id: &str, id: &str, why: &str) {
     let Ok(rec) = manager.request(id) else { return };
-    let Ok(repo) = manager.repo(&rec.r.repo) else { return };
     let now = now_ms();
     let Some(package) = manager.store.update_package(package_id, |package| {
         if !package.requests.iter().any(|member| member == id) {
@@ -263,7 +256,15 @@ async fn join(manager: &Arc<Manager>, package_id: &str, id: &str, why: &str) {
                 package.parts.push(part.clone());
             }
         }
-        package.hold_until_ms = policy::hold_until(&repo.repo.policy, package.tier, false, now, package.held_since_ms);
+        // Joining does not restart the wait: the package starts when it would have.
+        if rec.start_wish == "now" {
+            package.hold_until_ms = now;
+        } else if package.tier == Tier::Major {
+            package.hold_until_ms = 0;
+        }
+        if rec.start_wish == "wait" {
+            package.stopped = true;
+        }
     }) else {
         // The package left meanwhile: the request gets its own.
         create(manager, id).await;
@@ -283,8 +284,111 @@ async fn join(manager: &Arc<Manager>, package_id: &str, id: &str, why: &str) {
     manager.changed("inbox", "", &package.repo);
 }
 
-/// The same thing was asked twice: the newer request ends as merged, its text joins the older
-/// one, which is assessed again.
+/// Right after a request is read: is it the same as one already open in its repository and not
+/// yet being built? Then the newer of the two becomes a report on the older one, so many reports
+/// of one problem are one piece of work. True when `rec` itself was merged away (its run ends).
+/// Err when the chat flow did not answer (the request waits and is tried again).
+pub async fn merge_same(manager: &Arc<Manager>, rec: &ReqRec) -> Result<bool, ()> {
+    let early = [stage::ARRIVED, stage::CLARIFYING, stage::ASSESSED, stage::PLANNED, stage::VALIDATED, stage::HELD];
+    let others: Vec<ReqRec> = manager.store.read(|data| {
+        let mut found: Vec<ReqRec> = data
+            .requests
+            .values()
+            .filter(|other| other.r.id != rec.r.id && other.r.repo == rec.r.repo && other.r.ended_as.is_empty() && early.contains(&other.r.stage.as_str()))
+            .cloned()
+            .collect();
+        found.sort_by_key(|other| other.r.created_ms);
+        found
+    });
+    for other in others {
+        let params = MatchParams { a_title: other.r.title.clone(), a_text: other.r.text.clone(), b_title: rec.r.title.clone(), b_text: rec.r.text.clone() };
+        let answer: MatchAnswer = match manager.peer(flow::MATCH, json!(params)).await {
+            Ok(answer) => answer,
+            Err(error) => {
+                manager.unavailable(&format!("request:{}", rec.r.id), flow::MATCH, std::slice::from_ref(&rec.r.session_id), &error).await;
+                return Err(());
+            }
+        };
+        if answer.relation.trim() != "same" {
+            continue;
+        }
+        // Either may have moved on while the model thought.
+        let still = |id: &str| manager.request(id).map(|now| now.r.ended_as.is_empty() && early.contains(&now.r.stage.as_str())).unwrap_or(false);
+        if !still(&rec.r.id) || !still(&other.r.id) {
+            continue;
+        }
+        let (older, newer) = if other.r.created_ms <= rec.r.created_ms { (&other.r.id, &rec.r.id) } else { (&rec.r.id, &other.r.id) };
+        if newer != &rec.r.id {
+            take_out(manager, newer);
+        }
+        merge(manager, older, newer, answer.because.trim()).await;
+        return Ok(newer == &rec.r.id);
+    }
+    // Then what was already done: the repository's ledger, and finished work still on the board.
+    let mut done = crate::ledger::done(manager, &rec.r.repo).await;
+    let finished: Vec<crate::ledger::Entry> = manager.store.read(|data| {
+        data.requests
+            .values()
+            .filter(|other| other.r.id != rec.r.id && other.r.repo == rec.r.repo && matches!(other.r.stage.as_str(), stage::LANDED | stage::SOAKING | stage::RELEASED))
+            .filter(|other| other.r.ended_as.is_empty() || other.r.ended_as == "released")
+            .map(|other| crate::ledger::Entry {
+                event: if other.r.stage == stage::RELEASED { "released".into() } else { "landed".into() },
+                request: other.r.id.clone(),
+                title: other.r.title.clone(),
+                text: other.r.text.clone(),
+                versions: if other.r.stage == stage::RELEASED { vec![other.r.ended_reason.clone()] } else { Vec::new() },
+                ms: other.r.updated_ms,
+                ..crate::ledger::Entry::default()
+            })
+            .collect()
+    });
+    for entry in finished {
+        if !done.iter().any(|known| known.request == entry.request) {
+            done.push(entry);
+        }
+    }
+    for entry in done {
+        let params = MatchParams { a_title: entry.title.clone(), a_text: entry.text.clone(), b_title: rec.r.title.clone(), b_text: rec.r.text.clone() };
+        let answer: MatchAnswer = match manager.peer(flow::MATCH, json!(params)).await {
+            Ok(answer) => answer,
+            Err(error) => {
+                manager.unavailable(&format!("request:{}", rec.r.id), flow::MATCH, std::slice::from_ref(&rec.r.session_id), &error).await;
+                return Err(());
+            }
+        };
+        if answer.relation.trim() == "same" {
+            already_done(manager, rec, &entry).await;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The request asks for what is already done: it is closed as one more report of that work, with
+/// a line saying where the fix is (on the main branch, or in which release).
+async fn already_done(manager: &Arc<Manager>, rec: &ReqRec, entry: &crate::ledger::Entry) {
+    manager.next_run(&rec.r.id);
+    let versions = entry.versions.iter().filter(|version| !version.is_empty()).cloned().collect::<Vec<_>>().join(", ");
+    let line = if entry.event == "released" {
+        manager.t("line_already_released", &[("title", &entry.title), ("request", &entry.request), ("versions", &versions)])
+    } else {
+        manager.t("line_already_landed", &[("title", &entry.title), ("request", &entry.request)])
+    };
+    take_out(manager, &rec.r.id);
+    manager.store.update_request(&rec.r.id, |current| {
+        current.r.ended_as = cc_protocol::contracts::manage::ended::MERGED.into();
+        current.r.ended_reason = line.clone();
+        current.r.merged_into = entry.request.clone();
+    });
+    manager.settled(&format!("request:{}", rec.r.id));
+    manager.entry(&rec.r.session_id, kinds::STAGE, json!({"stage": "merged", "text": line})).await;
+    manager.line(&rec.r.session_id, &line).await;
+    manager.changed("request", &rec.r.id, &rec.r.repo);
+}
+
+/// The same thing was asked twice: the newer request ends as merged into the older one, as one
+/// more report of it. The older one goes on as it is: the newer text is in its own thread, and a
+/// line in the older thread says who reported it again.
 async fn merge(manager: &Arc<Manager>, older: &str, newer: &str, because: &str) {
     let Ok(new_rec) = manager.request(newer) else { return };
     let Ok(old_rec) = manager.request(older) else { return };
@@ -300,7 +404,7 @@ async fn merge(manager: &Arc<Manager>, older: &str, newer: &str, because: &str) 
     manager.line(&new_rec.r.session_id, &line).await;
     manager.note(&old_rec.r.session_id, &manager.t("note_merged_in", &[("from", newer), ("title", &new_rec.r.title)])).await;
     manager.changed("request", newer, &new_rec.r.repo);
-    pipeline::again(manager, older, &new_rec.r.text, true);
+    manager.changed("request", older, &old_rec.r.repo);
 }
 
 /// Take a request out of the held package it is in. The package goes on without it, or is retired
@@ -331,7 +435,7 @@ pub fn take_out(manager: &Manager, id: &str) -> bool {
             package.parts = parts.clone();
             // A package that is no longer major gets a clock; one that still is asks again below.
             if package.tier == Tier::Major && tier != Tier::Major {
-                package.hold_until_ms = policy::hold_until(&policy, tier, false, now, package.held_since_ms);
+                package.hold_until_ms = policy::hold_until(&policy, tier, false, now);
             }
             package.tier = tier;
         });
@@ -340,6 +444,26 @@ pub fn take_out(manager: &Manager, id: &str) -> bool {
     }
     manager.changed("package", &package.id, &package.repo);
     true
+}
+
+/// A package that could not be finished goes back: each of its requests is planned again with
+/// what went wrong as the plan's note. Nothing is declined and no person is asked.
+pub async fn give_back(manager: &Arc<Manager>, id: &str, why: &str) {
+    let Ok(package) = manager.package(id) else { return };
+    inbox::close_where(manager, "policy", "superseded", |ask| ask.ask.package == package.id);
+    for request in &package.requests {
+        manager.store.update_request(request, |rec| rec.r.package.clear());
+    }
+    manager.store.retire_package(id, "given back");
+    let line = manager.t("line_given_back", &[("why", why)]);
+    for request in &package.requests {
+        if let Ok(rec) = manager.request(request) {
+            manager.note(&rec.r.session_id, &line).await;
+        }
+        pipeline::again(manager, request, why, false);
+    }
+    manager.changed("package", id, &package.repo);
+    manager.look_now();
 }
 
 /// End a package that will not be built: its requests are declined.
@@ -398,6 +522,24 @@ pub async fn edit(manager: &Arc<Manager>, params: &PackageEditParams) -> Result<
         manager.store.set_stage(request, stage::VALIDATED);
         // Its own package, not `place`: that would put it straight back.
         create(manager, request).await;
+    }
+    if let Some(request) = &params.join {
+        let target = manager.store.read(|data| data.requests.get(request).and_then(|rec| data.packages.get(&rec.r.package)).cloned());
+        let Some(target) = target else {
+            return Err(RpcError::invalid_params(format!("{request} is not waiting in a package")));
+        };
+        if target.id == package.id {
+            return Ok(());
+        }
+        if !held || target.stage != stage::HELD || target.repo != package.repo {
+            return Err(RpcError::new(codes::CONFLICT, manager.t("join_not_waiting", &[])));
+        }
+        let why = manager.t("joined_by_you", &[]);
+        for member in &package.requests {
+            take_out(manager, member);
+            join(manager, &target.id, member, &why).await;
+        }
+        manager.changed("package", &target.id, &target.repo);
     }
     manager.changed("package", &package.id, &package.repo);
     manager.changed("inbox", "", &package.repo);

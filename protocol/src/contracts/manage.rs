@@ -55,6 +55,10 @@ pub mod methods {
     pub const RUNNER_RELEASE: &str = "manage.runner.release";
     /// `{repo}` -> `{reachable, node, name, jobs}`: the repository's runner as the Runner page shows it.
     pub const RUNNER_GET: &str = "manage.runner.get";
+    /// `{}` -> `{items: [BoardItem], asks: [Ask]}`: every open request (and what was done in the
+    /// last seven days) with the column it is in and the facts of its one line, and the decisions
+    /// that wait on a person.
+    pub const BOARD_ITEMS: &str = "manage.board.items";
     /// The shared service declaration (`<category>.shares`).
     pub const SHARES: &str = "manage.shares";
 }
@@ -155,6 +159,10 @@ pub struct Source {
     pub commit_name: String,
     #[serde(default)]
     pub commit_email: String,
+    /// The repository on GitHub, `owner/name`, as a person set it: the apps that declare this
+    /// repository send their reports here (`contracts::reports`). Empty: no reports.
+    #[serde(default)]
+    pub github: String,
 }
 
 /// Per repository; a global policy can only be stricter.
@@ -177,8 +185,15 @@ pub struct Policy {
     pub major_paths: Vec<String>,
     /// Path globs that make a change at least minor.
     pub minor_paths: Vec<String>,
-    /// `HH:MM`, the daily train.
+    /// `HH:MM`, the train's time of day.
     pub train_at: String,
+    /// How often the train leaves: `3h` (every three hours from `train_at`), `week` (on
+    /// `train_day`), or empty: every day.
+    #[serde(default)]
+    pub train_every: String,
+    /// For a weekly train: 0 Monday … 6 Sunday.
+    #[serde(default)]
+    pub train_day: u32,
 }
 
 impl Default for Policy {
@@ -201,6 +216,8 @@ impl Default for Policy {
             major_paths: vec!["AGENTS.md".to_owned()],
             minor_paths: Vec::new(),
             train_at: "03:00".into(),
+            train_every: String::new(),
+            train_day: 0,
         }
     }
 }
@@ -330,6 +347,15 @@ pub struct Request {
     pub created_ms: u64,
     #[serde(default)]
     pub updated_ms: u64,
+    /// For a request an app reported (an error, a panic): the failure's fingerprint, how many
+    /// times it was seen, and when last. A report of the same fingerprint while the request is
+    /// open is counted here.
+    #[serde(default)]
+    pub fingerprint: String,
+    #[serde(default)]
+    pub seen: u64,
+    #[serde(default)]
+    pub seen_last_ms: u64,
 }
 
 /// One question of the clarify form.
@@ -369,6 +395,9 @@ pub struct RequestCreateParams {
     pub from: From,
     #[serde(default)]
     pub urgent: Option<bool>,
+    /// What the person attached when writing it.
+    #[serde(default)]
+    pub attachments: Vec<RequestFile>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -395,6 +424,71 @@ pub struct RequestEditParams {
     /// More text from the person (re-assessed).
     #[serde(default)]
     pub add_text: Option<String>,
+    /// The person moved it on the board: `true` start it now (or as soon as it is planned),
+    /// `false` let it wait until they start it.
+    #[serde(default)]
+    pub start: Option<bool>,
+    /// The person moved it back: plan it again.
+    #[serde(default)]
+    pub replan: bool,
+}
+
+/// The five columns of the board, in a person's words.
+pub mod column {
+    /// Read, sorted and planned.
+    pub const INCOMING: &str = "incoming";
+    /// Planned, waiting for its start (or paused by a person).
+    pub const WAITING: &str = "waiting";
+    /// A CortexCode is building or checking it.
+    pub const CODING: &str = "coding";
+    /// Built and on the main branch, running in the person's apps until the next release.
+    pub const DONE: &str = "done";
+    /// In a release (the last seven days).
+    pub const SHIPPED: &str = "shipped";
+}
+
+/// A request as the board shows it: its column and the facts of its one line.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct BoardItem {
+    #[serde(flatten)]
+    pub request: Request,
+    pub word: Word,
+    /// [`column`].
+    pub column: String,
+    /// A person paused it (it waits until started).
+    #[serde(default)]
+    pub paused: bool,
+    /// When it starts by itself (waiting); 0 when it waits for a yes or is paused.
+    #[serde(default)]
+    pub starts_ms: u64,
+    /// The step of its plan being built, and how many steps there are (coding).
+    #[serde(default)]
+    pub step: u32,
+    #[serde(default)]
+    pub steps: u32,
+    /// Checking what was built (coding).
+    #[serde(default)]
+    pub checking: bool,
+    /// Started but not building yet (coding): `next` (it starts in a moment), `after` (after the
+    /// work of its repository being built now), `builder` (no CortexCode can take it yet).
+    #[serde(default)]
+    pub queued: String,
+    /// Until when it runs in the person's apps, and the release after that (done).
+    #[serde(default)]
+    pub soak_until_ms: u64,
+    #[serde(default)]
+    pub release_ms: u64,
+    /// When it was released (done).
+    #[serde(default)]
+    pub released_ms: u64,
+    /// The package it is built in when that holds more than this request: they build together.
+    #[serde(default)]
+    pub together: String,
+    /// How many reports of the same thing were merged into it (0: none), and who sent them.
+    #[serde(default)]
+    pub reports: u32,
+    #[serde(default)]
+    pub reporters: Vec<String>,
 }
 
 /// One acceptance test as steps in the real app. Hidden from the builder.
@@ -639,6 +733,10 @@ pub struct PackageEditParams {
     /// Take this request out of the package (it builds apart).
     #[serde(default)]
     pub unbundle: Option<String>,
+    /// Build this package together with the one this request is in: its requests join that
+    /// package. Both must be waiting, in the same repository.
+    #[serde(default)]
+    pub join: Option<String>,
 }
 
 /// A decision wanted from a person: what fills the inbox.
@@ -795,6 +893,32 @@ pub mod kinds {
 pub struct SayParams {
     pub request: String,
     pub text: String,
+    /// What the person attached to the message (stored by the chat flow's `attachment.put`).
+    #[serde(default)]
+    pub attachments: Vec<RequestFile>,
+}
+
+/// A file attached to a request or one of its messages, as the chat flow stored it (the fields of
+/// `chatflow::Attachment` the manager reads).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct RequestFile {
+    /// image | file | folder.
+    pub kind: String,
+    /// Where it is: the stored copy, or the person's own folder.
+    pub path: String,
+    pub name: String,
+    #[serde(default)]
+    pub mime: String,
+    #[serde(default)]
+    pub bytes: u64,
+    /// Long text the person pasted, kept as a file.
+    #[serde(default)]
+    pub pasted_text: bool,
+    #[serde(default)]
+    pub lines: Option<u64>,
+    /// A small preview of an image (a `data:` URL), for the thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

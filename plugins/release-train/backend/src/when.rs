@@ -1,7 +1,7 @@
 //! The wall clock and the train's time of day. The train leaves at `HH:MM` on this computer's
 //! local clock, so days and times here are local.
 
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveTime, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone};
 
 /// The train time when a repository's policy names none that can be read (`03:00`).
 const DEFAULT_AT: (u32, u32) = (3, 0);
@@ -52,4 +52,75 @@ pub fn next(now: u64, at: (u32, u32), skip_day: &str) -> (String, u64) {
         day = day.succ_opt().unwrap_or(day);
     }
     (name(day), moment(day, at))
+}
+
+/// How often a repository's train leaves: every few hours, every day, or one day a week, at its
+/// time of day (`policy.train_every`, `train_day`, `train_at`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Every {
+    Hours(u32),
+    Day,
+    /// 0 is Monday.
+    Week(u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Schedule {
+    pub every: Every,
+    pub at: (u32, u32),
+}
+
+impl Schedule {
+    /// `every`: `3h` | `week` | anything else (daily). `day`: 0 Monday … 6 Sunday.
+    pub fn parse(every: &str, day: u32, at: &str) -> Self {
+        let every = match every.trim() {
+            "3h" => Every::Hours(3),
+            "week" => Every::Week(day.min(6)),
+            _ => Every::Day,
+        };
+        Self { every, at: parse_at(at) }
+    }
+}
+
+/// The train's moments on one day, each with its name (the day, or the day and the hour).
+fn slots_of(day: NaiveDate, schedule: &Schedule) -> Vec<(String, u64)> {
+    match schedule.every {
+        Every::Day => vec![(name(day), moment(day, schedule.at))],
+        Every::Week(weekday) if day.weekday().num_days_from_monday() == weekday => vec![(name(day), moment(day, schedule.at))],
+        Every::Week(_) => Vec::new(),
+        Every::Hours(hours) => {
+            let hours = hours.max(1);
+            let mut hour = schedule.at.0 % hours;
+            let mut out = Vec::new();
+            while hour < 24 {
+                out.push((format!("{} {hour:02}:{:02}", name(day), schedule.at.1), moment(day, (hour, schedule.at.1))));
+                hour += hours;
+            }
+            out
+        }
+    }
+}
+
+/// The latest train moment at or before `now` (this week at most), with its name.
+pub fn current(now: u64, schedule: &Schedule) -> Option<(String, u64)> {
+    let mut day = local(now).date_naive();
+    for _ in 0..8 {
+        if let Some(found) = slots_of(day, schedule).into_iter().filter(|(_, ms)| *ms <= now).max_by_key(|(_, ms)| *ms) {
+            return Some(found);
+        }
+        day = day.pred_opt()?;
+    }
+    None
+}
+
+/// The first train moment after `after` whose name is not `skip`, with its name.
+pub fn next_of(after: u64, schedule: &Schedule, skip: &str) -> (String, u64) {
+    let mut day = local(after).date_naive();
+    for _ in 0..16 {
+        if let Some(found) = slots_of(day, schedule).into_iter().find(|(slot, ms)| *ms > after && slot != skip) {
+            return found;
+        }
+        day = day.succ_opt().unwrap_or(day);
+    }
+    (name(day), moment(day, schedule.at))
 }

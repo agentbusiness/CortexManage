@@ -22,12 +22,13 @@ This file is written by hand until the charter plugin prints it (`docs/specs/03-
    for reading.
 5. **Plugins talk only through contract methods.** No plugin reads another plugin's records.
 6. **The mesh standard is carried byte for byte.** `protocol/` (the shared files), the mesh plugin's
-   core, `sandbox-kit/`, `service-kit/`, `model-kit/`, `shared-models/`, the memory plugin's graph
+   core, `sandbox-kit/`, `service-kit/`, `model-kit/`, `stats-kit/`, `shared-models/`, the memory plugin's graph
    files and `theme-cortex` are the same as in the other Cortex apps. A change to any of them is a
    standard change, made in every app in the same piece of work (`docs/specs/04-STANDARD.md`).
 7. **Secrets live in the Keychain or the Secret Service**, never in a file or the graph. A model
    never holds a key.
-8. **Local only.** No cloud, no telemetry; a model runs only on a GPU of the mesh.
+8. **Local only.** No cloud; an app's errors and metrics go only to a CortexManage on the
+   person's own mesh (`docs/specs/07-REPORTS.md`); a model runs only on a GPU of the mesh.
 9. **Nothing is recognised by guessing.** No name matching, no heuristics, no regular expressions
    and no patterns decide what a thing is or what it belongs to. A thing is what it declares in a
    fixed place (a field, a file at a fixed path), or what a person set. What is not declared is not

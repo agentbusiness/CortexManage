@@ -8,11 +8,14 @@
  * methods, or this flow's `turn`.
  */
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { definePlugin, errorMessage, kinds, useClient, useJournal, useQuery, useShared, type JournalEntry, type JournalPatch } from '@cortex/sdk';
-import { AskBlock, Clarify, GateBlock, Message, Note, PackageBlock, PlanBlock, StageLine, Trouble, WatchBlock, type Acts } from './blocks';
-import { BEFORE_BUILDING, NO_SELECTION, wordLabel, type Ask, type RequestView, type Selection } from './types';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { definePlugin, errorMessage, kinds, useClient, useHost, useJournal, useQuery, useShared, type JournalEntry, type JournalPatch } from '@cortex/sdk';
+import { AskBlock, Clarify, Message, Note, PackageBlock, PlanBlock, StageLine, Trouble, type Acts } from './blocks';
+import { BEFORE_BUILDING, NO_SELECTION, type Ask, type RequestView, type Selection } from './types';
+import { Composer } from './Composer';
+import type { AttachContext, AttachShell, Attachment, PutParams, PutResult } from './attachments';
 import './session.css';
+import './composer.css';
 
 /** This view's flow: what a person writes goes to its category. */
 const FLOW = 'chatflow-manage';
@@ -51,6 +54,8 @@ function Session() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const host = useHost();
 
   // Whether a message is on its way to the manager, or one of its questions runs for this session.
   const flow = useQuery<FlowState>(
@@ -107,18 +112,17 @@ function Session() {
     decide: (ask: Ask, action) => void run('manage.decide', { id: ask.id, attempt: ask.attempt, action }),
   };
 
-  const send = async () => {
-    const text = draft.trim();
-    if (!text || busy || !sessionId) return;
+  const send = async (text: string, attachments: Attachment[]): Promise<boolean> => {
+    if (busy || !sessionId) return false;
     pinned.current = true;
-    if (await run(`${FLOW}.turn`, { session_id: sessionId, text })) setDraft('');
+    return run(`${FLOW}.turn`, { session_id: sessionId, text, ...(attachments.length > 0 ? { attachments } : {}) });
   };
-  const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter sends; Shift+Enter is a new line. Not while a word is still being composed (IME).
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void send();
-    }
+  const attach: AttachContext = {
+    put: (params: PutParams) => client.call<PutResult>(`${FLOW}.attachment.put`, params),
+    shell: host.shell as unknown as AttachShell | null,
+    roots: [],
+    projectId: null,
+    sessionId,
   };
 
   const block = (entry: JournalEntry) => {
@@ -127,14 +131,16 @@ function Session() {
       // The manager's answers to the person. A line it marked as status (`status: true`: assessed,
       // planned, validated, held) repeats what the head's tags and the blocks show, and is not drawn.
       case kinds.ASSISTANT_MESSAGE: return entry.data.status === true ? null : <Message key={entry.seq} entry={entry} who="Manager" tone="live" />;
-      case 'digest': return <Message key={entry.seq} entry={entry} who="Manager · digest" tone="live" />;
+      // How the build is watched (digests, checkpoints, steers, checks) is the manager's own
+      // work: the thread keeps to the conversation, the plan and what needs the person.
+      case 'digest': return null;
       // The assessment is the tags in the head (tier, kind, what it reaches).
       case 'assessment': return null;
       case 'clarify': return <Clarify key={entry.seq} entry={entry} acts={acts} open={!ended && request.stage === 'clarifying' && entry.seq === open.clarify} />;
       case 'manage_plan': return <PlanBlock key={entry.seq} entry={entry} />;
-      case 'package': return <PackageBlock key={entry.seq} entry={entry} acts={acts} open={!ended && request.stage === 'held' && entry.seq === open.pkg} />;
-      case 'watch': return <WatchBlock key={entry.seq} entry={entry} />;
-      case 'gate': return <GateBlock key={entry.seq} entry={entry} />;
+      case 'package': return <PackageBlock key={entry.seq} entry={entry} acts={acts} open={false} />;
+      case 'watch': return null;
+      case 'gate': return null;
       case 'stage': return <StageLine key={entry.seq} entry={entry} />;
       case 'ask': {
         const ask = entry.data.ask as { id?: string } | undefined;
@@ -153,12 +159,8 @@ function Session() {
         <span className="ap faint">{request.id}</span>
         <span className="grow" />
         {request.urgent && <span className="tag major">Urgent</span>}
-        {request.kind && request.tier && <span className={`tag ${request.tier}`}>{request.tier}</span>}
-        {request.kind && <span className="tag">{request.kind}</span>}
-        {(request.surface ?? []).map((part) => <span className="tag" key={part}>{part}</span>)}
-        {ended
-          ? <span className="ap faint">{capital(request.ended_as ?? '')}</span>
-          : request.word && <span className="ap origin">{capital(wordLabel(request.word))}</span>}
+        {request.kind && <span className="ap faint">{[capital(request.kind), request.tier ? capital(request.tier) : '', (request.surface ?? []).map(capital).join(' + ')].filter(Boolean).join(' · ')}</span>}
+        {ended && <span className="ap faint">{capital(request.ended_as ?? '')}</span>}
       </div>
 
       <div
@@ -176,38 +178,35 @@ function Session() {
 
       <div className="composer cm-composer">
         {error && <p className="inline-error" role="alert">{error}</p>}
-        <div className="cm-box">
-          <textarea
-            className="write"
-            rows={1}
-            value={draft}
-            disabled={ended}
-            placeholder={ended ? 'This request has ended.' : beforeBuilding ? `Say more about this change, or what to change in the plan…` : 'Tell the builder something…'}
-            aria-label="Message"
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKey}
-          />
-          <div className="tools cm-tools" role="group" aria-label="Message tools">
-            {beforeBuilding && (
-              <>
-                <button type="button" className="sw" aria-labelledby="cm-urgent" aria-pressed={request.urgent === true} disabled={busy}
-                  onClick={() => void run('manage.request.edit', { id: request.id, urgent: !request.urgent })} />
-                <span className="ap faint" id="cm-urgent">Urgent</span>
-              </>
-            )}
-            {working && (
-              <>
-                <span className="pip run" aria-hidden />
-                <span className="ap origin">{flow.data?.stage === 'say' ? 'Answering' : `Working · ${flow.data?.stage ?? ''}`}</span>
-              </>
-            )}
-            <div className="grow" />
-            {working && <button type="button" className="detent warn" onClick={() => void run(`${FLOW}.cancel`, { session_id: sessionId })}>Stop</button>}
-            <button type="button" className="detent send" disabled={ended || busy || draft.trim() === ''} onClick={() => void send()}>
-              {beforeBuilding || ended ? 'Send' : 'Steer'}
-            </button>
-          </div>
-        </div>
+        <Composer
+          draft={draft}
+          onDraft={setDraft}
+          onSend={send}
+          disabled={ended}
+          placeholder={ended ? 'This request has ended.' : beforeBuilding ? 'Say more about this change, or what to change in the plan…' : 'Tell the builder something…'}
+          attachments={files}
+          onAttachments={setFiles}
+          attach={attach}
+          sendLabel={beforeBuilding || ended ? 'Send' : 'Steer'}
+          left={(
+            <>
+              {beforeBuilding && (
+                <>
+                  <button type="button" className="sw" aria-labelledby="cm-urgent" aria-pressed={request.urgent === true} disabled={busy}
+                    onClick={() => void run('manage.request.edit', { id: request.id, urgent: !request.urgent })} />
+                  <span className="ap faint" id="cm-urgent">Urgent</span>
+                </>
+              )}
+              {working && (
+                <>
+                  <span className="pip run" aria-hidden />
+                  <span className="ap origin">{flow.data?.stage === 'say' ? 'Answering' : `Working · ${flow.data?.stage ?? ''}`}</span>
+                </>
+              )}
+            </>
+          )}
+          right={working ? <button type="button" className="detent warn" onClick={() => void run(`${FLOW}.cancel`, { session_id: sessionId })}>Stop</button> : null}
+        />
       </div>
     </main>
   );

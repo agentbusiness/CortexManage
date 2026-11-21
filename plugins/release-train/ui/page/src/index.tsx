@@ -1,6 +1,6 @@
 /**
  * page.releases@1: the Releases view of a repository. Tonight's train (the parts, now → next, the
- * requests each part carries), what soaks in the owner's apps, and what was released, with Take
+ * requests each part carries), what waits for the next release, and what was released, with Take
  * back on each released package. The repository comes from the shared selection; everything shown
  * is `train.get`, read again on `train.changed`.
  */
@@ -144,21 +144,18 @@ function outcome(release: Release): string {
   }
 }
 
-/** Where a package stands in its soak. */
-function soakLine(soak: Soak, now: number): string {
+/** Where finished work stands before its release. */
+function waitLine(soak: Soak, now: number): string {
   const reports = soak.reports?.length ?? 0;
-  const said = reports === 0 ? 'no reports' : count(reports, 'report');
-  if (soak.state === 'ready') return `Soak done · ${said}`;
-  const total = hours(soak.until_ms - soak.landed_ms);
-  const done = Math.min(total, hours(now - soak.landed_ms));
-  return `${done} h of ${total} · ${said}`;
+  if (reports > 0) return count(reports, 'report');
+  return soak.until_ms > now ? `Ready ${hours(soak.until_ms - now)} h from now` : 'Ready';
 }
 
 function Soaking({ soaks, now }: { soaks: Soak[]; now: number }) {
   return (
     <section className="rt-block">
-      <div className="rt-hd"><span className="pip done" /><span className="ap">Soaking in your apps</span></div>
-      {soaks.length === 0 ? <p className="rt-none">Nothing is soaking.</p> : null}
+      <div className="rt-hd"><span className="pip done" /><span className="ap">Waiting for the next release</span></div>
+      {soaks.length === 0 ? <p className="rt-none">Nothing is waiting.</p> : null}
       {soaks.map((soak) => (
         <div className="rt-row" key={soak.package}>
           <div className="what">
@@ -167,7 +164,7 @@ function Soaking({ soaks, now }: { soaks: Soak[]; now: number }) {
           </div>
           <span className="side">
             {soak.state === 'held_back' ? <span className="ap live">Held back</span> : null}
-            <span className="ap faint">{soakLine(soak, now)}</span>
+            <span className="ap faint">{waitLine(soak, now)}</span>
           </span>
         </div>
       ))}

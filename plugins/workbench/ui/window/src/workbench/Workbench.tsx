@@ -101,7 +101,7 @@ export function Workbench({ registry, shell }: { registry: PluginRegistry; shell
               <SlotList registry={registry} name="workbench.band@1" className="cx-band-item" />
             </ComputerScope>
           </div>
-          <div ref={layout.work} className="cx-work" data-pane={layout.collapsed ? 'collapsed' : 'open'} data-sidebar={layout.strip ? 'strip' : 'open'} style={layout.style}>
+          <div ref={layout.work} className="cx-work" data-pane={layout.collapsed ? 'collapsed' : 'open'} data-sidebar={layout.board ? 'board' : layout.strip ? 'strip' : 'open'} style={layout.style}>
             <div className="cx-left">
               <BoundSlot registry={registry} name="workbench.sidebar@1" />
             </div>
@@ -201,6 +201,8 @@ function useLayout() {
   const [pane, setPane] = useShared<number | null>('layout.pane', null);
   const [collapsed, setCollapsed] = useShared<boolean>('layout.paneCollapsed', false);
   const [strip, setStrip] = useShared<boolean>('layout.sidebarCollapsed', false);
+  // The sidebar unfolded over the whole work area (a board); the right pane may stay beside it.
+  const [board] = useShared<boolean>('layout.board', false);
   const live = useRef<{ sidebar: number | null; sidebarSnap: boolean; pane: number | null; snap: boolean }>({ sidebar: null, sidebarSnap: false, pane: null, snap: false });
 
   const measure = () => {
@@ -276,5 +278,5 @@ function useLayout() {
     '--cx-left': `${strip ? SIDEBAR_STRIP : sidebar ?? SIDEBAR_DEFAULT}px`,
     '--cx-pane': pane !== null ? `${pane}px` : PANE_DEFAULT,
   } as CSSProperties;
-  return { work, collapsed, strip, style, moveSidebar, endSidebar, movePane, endPane, resetSidebar, resetPane };
+  return { work, collapsed, strip, board, style, moveSidebar, endSidebar, movePane, endPane, resetSidebar, resetPane };
 }

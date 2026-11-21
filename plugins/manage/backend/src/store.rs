@@ -70,6 +70,11 @@ pub struct ReqRec {
     pub plan_note: String,
     /// The model's sentence for its tier.
     pub because: String,
+    /// What the person said with the board before it had a package: `now` (start it as soon as
+    /// it is planned), `wait` (wait until they start it), or empty.
+    pub start_wish: String,
+    /// The person took it off the board after it landed (its code stays).
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -215,6 +220,7 @@ fn repo_props(rec: &RepoRec) -> Map<String, Value> {
         ("source_changes", json!(repo.source.changes)),
         ("source_commit_name", json!(repo.source.commit_name)),
         ("source_commit_email", json!(repo.source.commit_email)),
+        ("source_github", json!(repo.source.github)),
         ("runner", json!(repo.runner)),
         ("runner_name", json!(repo.runner_name)),
         ("managed", json!(repo.managed)),
@@ -236,6 +242,8 @@ fn repo_props(rec: &RepoRec) -> Map<String, Value> {
         ("major_paths", list(&policy.major_paths)),
         ("minor_paths", list(&policy.minor_paths)),
         ("train_at", json!(policy.train_at)),
+        ("train_every", json!(policy.train_every)),
+        ("train_day", json!(policy.train_day)),
     ])
 }
 
@@ -258,6 +266,8 @@ fn repo_from(p: &Map<String, Value>) -> RepoRec {
         major_paths: graph::texts(p, "major_paths"),
         minor_paths: graph::texts(p, "minor_paths"),
         train_at: graph::text(p, "train_at"),
+        train_every: graph::text(p, "train_every"),
+        train_day: num(p, "train_day") as u32,
     };
     RepoRec {
         repo: Repo {
@@ -272,6 +282,7 @@ fn repo_from(p: &Map<String, Value>) -> RepoRec {
                 changes: graph::text(p, "source_changes"),
                 commit_name: graph::text(p, "source_commit_name"),
                 commit_email: graph::text(p, "source_commit_email"),
+                github: graph::text(p, "source_github"),
             },
             runner: graph::text(p, "runner"),
             runner_name: graph::text(p, "runner_name"),
@@ -307,6 +318,8 @@ fn request_props(rec: &ReqRec) -> Map<String, Value> {
         ("tier_model", json!(rec.tier_model.as_str())),
         ("tier_reasons", list(&r.tier_reasons)),
         ("because", json!(rec.because)),
+        ("start_wish", json!(rec.start_wish)),
+        ("hidden", json!(rec.hidden)),
         ("surface", list(&r.surface)),
         ("urgent", json!(r.urgent)),
         ("urgent_because", json!(r.urgent_because)),
@@ -320,6 +333,9 @@ fn request_props(rec: &ReqRec) -> Map<String, Value> {
         ("merged_into", json!(r.merged_into)),
         ("package", json!(r.package)),
         ("parts", list(&r.parts)),
+        ("fingerprint", json!(r.fingerprint)),
+        ("seen", json!(r.seen)),
+        ("seen_last_ms", json!(r.seen_last_ms)),
         ("plan_note", json!(rec.plan_note)),
         ("created_ms", json!(r.created_ms)),
         ("updated_ms", json!(r.updated_ms)),
@@ -352,6 +368,9 @@ fn request_from(p: &Map<String, Value>) -> ReqRec {
             questions: Vec::new(),
             created_ms: num(p, "created_ms"),
             updated_ms: num(p, "updated_ms"),
+            fingerprint: graph::text(p, "fingerprint"),
+            seen: num(p, "seen"),
+            seen_last_ms: num(p, "seen_last_ms"),
         },
         stages,
         tier_model: tier(p, "tier_model"),
@@ -364,6 +383,8 @@ fn request_from(p: &Map<String, Value>) -> ReqRec {
         title_auto: graph::flag(p, "title_auto"),
         plan_note: graph::text(p, "plan_note"),
         because: graph::text(p, "because"),
+        start_wish: graph::text(p, "start_wish"),
+        hidden: graph::flag(p, "hidden"),
     }
 }
 
