@@ -125,7 +125,7 @@ fn no_effort() -> String {
 
 /// What each constrained stage's schema must carry for the flow to read its answer.
 const SCHEMA_NEEDS: &[(&str, &[&str])] = &[
-    ("assess", &["because", "kind", "surface", "tier", "urgent_because", "urgent", "questions", "actionable", "title"]),
+    ("assess", &["because", "kind", "surface", "tier", "major_because", "urgent_because", "urgent", "questions", "actionable", "title"]),
     ("match", &["because", "relation"]),
     ("plan", &["analysis", "goal", "approach", "architecture", "risks", "tasks", "note"]),
     ("validate", &["necessary", "sensible", "fits", "provable", "standard_safe", "reason", "verdict"]),

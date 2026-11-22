@@ -237,15 +237,19 @@ pub fn read_assess(value: &Value, request: &str) -> Result<AssessedParams, Strin
         urgent: flag(value, "urgent"),
         because: text_of(value, "because"),
         urgent_because: text_of(value, "urgent_because"),
+        major_because: text_of(value, "major_because"),
     })
 }
 
-/// ASSESS's host checks: both quotes must be in the request, and a request that cannot be acted on
+/// ASSESS's host checks: every quote must be in the request (no major without its sentence), and a request that cannot be acted on
 /// must come with the questions that would make it so. Then what the host settles: no urgency
 /// without its sentence, and questions only where the request waits for them.
 fn checked_assess(mut answer: AssessedParams, text: &str) -> Result<AssessedParams, String> {
     if !quoted(&answer.because, text) {
         return Err("`because` is not a sentence of the request. Copy one sentence of the request word for word.".into());
+    }
+    if answer.tier == Tier::Major && !quoted(&answer.major_because, text) {
+        return Err("`tier` is major but `major_because` is not a sentence of the request. Copy the one that says an interface, stored data, security or several places change, or choose minor.".into());
     }
     if answer.urgent && !quoted(&answer.urgent_because, text) {
         return Err("`urgent_because` is not a sentence of the request. Copy one word for word, or leave it empty and set `urgent` to false.".into());
@@ -255,6 +259,9 @@ fn checked_assess(mut answer: AssessedParams, text: &str) -> Result<AssessedPara
     }
     if !answer.urgent {
         answer.urgent_because.clear();
+    }
+    if answer.tier != Tier::Major {
+        answer.major_because.clear();
     }
     if answer.actionable {
         answer.questions.clear();
@@ -268,7 +275,7 @@ fn checked_assess(mut answer: AssessedParams, text: &str) -> Result<AssessedPara
 /// the model last said when it said anything readable; nothing is quoted, because no quote held.
 fn cautious_assess(last: Option<&Value>, request: &str) -> AssessedParams {
     let said = last.and_then(|value| read_assess(value, request).ok()).unwrap_or_default();
-    AssessedParams { request: request.to_owned(), actionable: true, questions: Vec::new(), title: said.title, kind: said.kind, tier: Tier::Minor, surface: said.surface, urgent: false, because: String::new(), urgent_because: String::new() }
+    AssessedParams { request: request.to_owned(), actionable: true, questions: Vec::new(), title: said.title, kind: said.kind, tier: Tier::Minor, surface: said.surface, urgent: false, because: String::new(), urgent_because: String::new(), major_because: String::new() }
 }
 
 pub fn read_match(value: &Value) -> Result<MatchAnswer, String> {

@@ -392,9 +392,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
 
       <span className="ap">Rules</span>
       <span className="cm-set-cell">
-        <label className="field area">
-          <textarea value={draft.rules} rows={3} aria-label="Rules for commits and releases" placeholder="Rules every commit and release of this repository keeps" onChange={(event) => set({ rules: event.target.value })} />
-        </label>
+        <textarea className="cm-text" value={draft.rules} rows={3} aria-label="Rules for commits and releases" placeholder="Rules every commit and release of this repository keeps" onChange={(event) => set({ rules: event.target.value })} />
       </span>
 
       <Ships repo={repo} busy={act.busy !== null} onLearn={learn} onSetUp={setUp} />
@@ -444,7 +442,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
       {draft.delivery.release_kind === 'steps' && (
         <>
           <span className="ap">Commands</span>
-          <span className="cm-set-cell"><label className="field area"><textarea className="mono" rows={3} value={draft.delivery.release_steps} aria-label="Release commands, one per line" onChange={(event) => setDelivery('release_steps', event.target.value)} /></label></span>
+          <span className="cm-set-cell"><textarea className="cm-text mono" rows={3} value={draft.delivery.release_steps} aria-label="Release commands, one per line" onChange={(event) => setDelivery('release_steps', event.target.value)} /></span>
           <span className="ap">Plan command</span>
           <span className="cm-set-cell"><label className="field"><input className="mono" value={draft.delivery.plan_step} aria-label="Command that shows what a release would ship" onChange={(event) => setDelivery('plan_step', event.target.value)} /></label></span>
         </>
@@ -475,9 +473,9 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
         </>
       )}
       <span className="ap">Checks</span>
-      <span className="cm-set-cell"><label className="field area"><textarea className="mono" rows={2} value={draft.delivery.checks} aria-label="Checks before landing, one per line" onChange={(event) => setDelivery('checks', event.target.value)} /></label></span>
+      <span className="cm-set-cell"><textarea className="cm-text mono" rows={2} value={draft.delivery.checks} aria-label="Checks before landing, one per line" onChange={(event) => setDelivery('checks', event.target.value)} /></span>
       <span className="ap">Secret files</span>
-      <span className="cm-set-cell"><label className="field area"><textarea className="mono" rows={2} value={draft.delivery.secret_files} aria-label="Files a release reads that git does not hold, one per line" onChange={(event) => setDelivery('secret_files', event.target.value)} /></label></span>
+      <span className="cm-set-cell"><textarea className="cm-text mono" rows={2} value={draft.delivery.secret_files} aria-label="Files a release reads that git does not hold, one per line" onChange={(event) => setDelivery('secret_files', event.target.value)} /></span>
         </>
       )}
 

@@ -29,7 +29,7 @@ provides = [
   "manage.board.items",
   "manage.shares",
   "manage.reports.send", "manage.reports.read", "manage.reports.request",
-  "manage.timeline.read", "manage.request.reopen",
+  "manage.timeline.read", "manage.request.reopen", "manage.request.story",
   "manage.delivery.learn", "manage.delivery.edit", "manage.release.waits",
   "manage.rules.get", "manage.rules.edit",
 ]

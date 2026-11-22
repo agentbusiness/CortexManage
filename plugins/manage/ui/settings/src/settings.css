@@ -1,4 +1,6 @@
-#cc .cm-rules-area{display:block;width:100%;}
-#cc .cm-rules-area textarea{width:100%;min-height:140px;resize:vertical;font-family:var(--font-reading);font-size:13.5px;line-height:1.55;}
+#cc .cm-text{display:block;width:100%;box-sizing:border-box;min-height:150px;padding:8px 10px;border:1px solid var(--rule-2);background:transparent;color:var(--ink);
+  font-family:var(--font-reading);font-size:13.5px;line-height:1.55;resize:vertical;outline:0;}
+#cc .cm-text:focus-visible{border-color:var(--rubric);}
+#cc .cm-text::placeholder{color:var(--ink-3);font-style:italic;}
 #cc .cm-rules-foot{display:flex;align-items:center;gap:8px;margin-top:10px;}
 #cc .cm-rules-foot .grow{flex:1;}

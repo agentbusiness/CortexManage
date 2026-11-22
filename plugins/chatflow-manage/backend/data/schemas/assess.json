@@ -39,6 +39,10 @@
         "major"
       ]
     },
+    "major_because": {
+      "type": "string",
+      "maxLength": 400
+    },
     "urgent_because": {
       "type": "string",
       "maxLength": 400
@@ -89,6 +93,7 @@
     "kind",
     "surface",
     "tier",
+    "major_because",
     "urgent_because",
     "urgent",
     "questions",

@@ -261,14 +261,19 @@ async fn assess(manager: &Arc<Manager>, rec: &ReqRec, run: u64) -> bool {
     }
     // The model's sentence for "urgent" must be in the request; one that is not counts as no.
     let quoted = !answer.urgent_because.trim().is_empty() && plain(&rec.r.text).contains(&plain(&answer.urgent_because));
+    // Major stops and asks a person, so it needs its sentence in the request too; without one the
+    // model's major counts as minor.
+    let major = answer.tier == Tier::Major && !answer.major_because.trim().is_empty() && plain(&rec.r.text).contains(&plain(&answer.major_because));
+    let tier_model = if answer.tier == Tier::Major && !major { Tier::Minor } else { answer.tier };
+    let tier_because = if major { answer.major_because.trim() } else { answer.because.trim() };
     let new_title = (rec.title_auto && !answer.title.trim().is_empty()).then(|| answer.title.trim().to_owned());
-    let model_reason = manager.t("reason_model", &[("tier", answer.tier.as_str()), ("because", answer.because.trim())]);
+    let model_reason = manager.t("reason_model", &[("tier", tier_model.as_str()), ("because", tier_because)]);
     let floor_reason = manager.t("reason_no_plan", &[]);
     let Some(updated) = manager.store.update_request(id, |rec| {
         rec.r.kind = answer.kind.trim().to_lowercase();
         rec.r.surface = answer.surface.clone();
-        rec.tier_model = answer.tier;
-        rec.because = answer.because.trim().to_owned();
+        rec.tier_model = tier_model;
+        rec.because = tier_because.to_owned();
         // Before there is a plan there are no paths to judge by: the floor is safe.
         rec.r.tier_floor = Tier::Safe;
         rec.urgent_model = answer.urgent && quoted;

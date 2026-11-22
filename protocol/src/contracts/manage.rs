@@ -75,6 +75,9 @@ pub mod methods {
     /// message. One that never landed starts again; one whose work is on the main branch gets a new
     /// request that follows it.
     pub const REQUEST_REOPEN: &str = "manage.request.reopen";
+    /// `{id}` -> `{request: RequestView, because, events: [TimelineEntry], decisions: [Decision],
+    /// merged: [{id, title, from}]}`: the whole story of one request, for the Timeline.
+    pub const REQUEST_STORY: &str = "manage.request.story";
     /// `{repo}` -> [`super::Delivery`]: learn again how the repository ships (in the background;
     /// the answer is the profile as it is now, `state: learning`).
     pub const DELIVERY_LEARN: &str = "manage.delivery.learn";
@@ -1014,6 +1017,9 @@ pub struct AssessedParams {
     pub because: String,
     #[serde(default)]
     pub urgent_because: String,
+    /// The sentence of the request that shows it is major; empty unless `tier` is major.
+    #[serde(default)]
+    pub major_because: String,
 }
 
 

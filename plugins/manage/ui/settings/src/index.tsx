@@ -35,8 +35,8 @@ function RulesPanel() {
   return (
     <div className="cx-settings-panel-body" data-build={__CORTEX_BUILD__} data-panel="rules">
       <h3 className="cx-settings-title">Rules for every repository</h3>
-      <label className="field cm-rules-area">
-        <textarea
+      <textarea
+          className="cm-text"
           rows={8}
           value={text}
           aria-label="Rules for every repository's commits and releases"
@@ -46,7 +46,6 @@ function RulesPanel() {
             setDraft(event.target.value);
           }}
         />
-      </label>
       <div className="cm-rules-foot">
         {saved && !dirty && <span className="ap faint">Saved</span>}
         <span className="grow" />

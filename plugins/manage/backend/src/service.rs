@@ -610,6 +610,7 @@ impl Manager {
                 Ok(json!({"entries": crate::ledger::timeline(self, since, before).await, "since_ms": since, "before_ms": before}))
             }
             methods::REQUEST_REOPEN => self.request_reopen(parse_params(params)?).await,
+            methods::REQUEST_STORY => self.request_story(&id_of(&params)?).await,
             methods::DELIVERY_LEARN => to_value(&crate::delivery::learn(self, params.get("repo").and_then(Value::as_str).unwrap_or_default())?),
             methods::DELIVERY_EDIT => to_value(&crate::delivery::edit(self, &parse_params(params)?)?),
             methods::RELEASE_WAITS => {
@@ -893,6 +894,42 @@ impl Manager {
         pipeline::again(self, &rec.r.id, &text, true);
         self.changed("request", &rec.r.id, &rec.r.repo);
         to_value(&self.request_view_of(&rec.r.id)?)
+    }
+
+    /// The whole story of one request: what came in, how it was sorted and why, its plan with the
+    /// verdicts, every step with its reason, the decisions that waited on a person and how they
+    /// were answered, and the reports merged into it.
+    async fn request_story(&self, id: &str) -> Result<Value, RpcError> {
+        let rec = self.request(id)?;
+        let view = self.request_view_of(id)?;
+        let (decisions, merged) = self.store.read(|data| {
+            let package = data.packages.get(&rec.r.package);
+            let mut decisions: Vec<&crate::store::AskRec> = data
+                .asks
+                .values()
+                .filter(|ask| ask.ask.request == rec.r.id || ask.other_request == rec.r.id || package.is_some_and(|package| ask.ask.package == package.id))
+                .collect();
+            decisions.sort_by_key(|ask| ask.ask.since_ms);
+            let decisions: Vec<Value> = decisions
+                .into_iter()
+                .map(|ask| {
+                    json!({
+                        "kind": ask.ask.kind, "subject": ask.ask.subject, "why": ask.ask.why,
+                        "since_ms": ask.ask.since_ms, "open": ask.open, "action": ask.action,
+                        "by": ask.by, "note": ask.note, "answered_ms": ask.answered_ms,
+                    })
+                })
+                .collect();
+            let merged: Vec<Value> = data
+                .requests
+                .values()
+                .filter(|other| other.r.merged_into == rec.r.id)
+                .map(|other| json!({"id": other.r.id, "title": other.r.title, "from": other.r.from.name, "ms": other.r.created_ms}))
+                .collect();
+            (decisions, merged)
+        });
+        let events = crate::ledger::of_request(self, &rec.r.repo, id).await;
+        Ok(json!({"request": view, "because": rec.because, "events": events, "decisions": decisions, "merged": merged}))
     }
 
     /// What a person said the next release of the repository waits for and is not ready yet.

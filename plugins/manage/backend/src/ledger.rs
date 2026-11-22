@@ -227,3 +227,30 @@ pub async fn timeline(manager: &Manager, since_ms: u64, before_ms: u64) -> Vec<c
     out.sort_by(|a, b| b.ms.cmp(&a.ms));
     out
 }
+
+/// Every ledger record of one request, oldest first.
+pub async fn of_request(manager: &Manager, repo: &str, request: &str) -> Vec<cc_protocol::contracts::manage::TimelineEntry> {
+    use cc_protocol::contracts::manage::TimelineEntry;
+    let name = manager.store.read(|data| data.repos.get(repo).map(|rec| rec.repo.name.clone()).unwrap_or_default());
+    let Ok(records) = manager.store.graph.newest(&topic(repo), TIMELINE_LOOK_BACK).await else { return Vec::new() };
+    let mut out: Vec<TimelineEntry> = records
+        .into_iter()
+        .filter_map(|record| serde_json::from_value::<Entry>(record.value).ok())
+        .filter(|entry| entry.request == request)
+        .map(|entry| TimelineEntry {
+            repo: repo.to_owned(),
+            repo_name: name.clone(),
+            event: entry.event,
+            request: entry.request,
+            title: entry.title,
+            why: entry.why,
+            by: entry.by,
+            link: if entry.link.is_empty() && !entry.commit.is_empty() { short(&entry.commit) } else { entry.link },
+            versions: entry.versions,
+            ms: entry.ms,
+            reopen: false,
+        })
+        .collect();
+    out.sort_by_key(|entry| entry.ms);
+    out
+}

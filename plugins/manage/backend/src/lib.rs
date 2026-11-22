@@ -52,6 +52,7 @@ pub const PROVIDES: &[&str] = &[
     methods::SHARES,
     methods::TIMELINE_READ,
     methods::REQUEST_REOPEN,
+    methods::REQUEST_STORY,
     methods::DELIVERY_LEARN,
     methods::DELIVERY_EDIT,
     methods::RELEASE_WAITS,
