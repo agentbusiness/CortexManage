@@ -7,7 +7,7 @@
 [plugin]
 id = "manage"
 name = "Manage"
-version = "0.1.17"
+version = "0.1.18"
 description = "The lifecycle of a change: requests are assessed, planned and validated, held in packages, built by a runner under the watch, proven by the gates, landed and handed to the release train. With the sidebar, the card, the watch, the evidence, the inbox and the Hold switch."
 license = "UNLICENSED"
 platforms = ["macos", "linux"]
