@@ -169,9 +169,14 @@ impl Graph {
 
     /// Every record of a stream appended at or after `since_ms`, oldest first.
     pub async fn since(&self, topic: &str, since_ms: u64) -> Result<Vec<StreamEntry>, RpcError> {
+        self.since_from(topic, None, since_ms).await
+    }
+
+    /// Every record of a stream from `from_offset` on (the oldest kept when absent) appended at or
+    /// after `since_ms`, oldest first.
+    pub async fn since_from(&self, topic: &str, mut from_offset: Option<u64>, since_ms: u64) -> Result<Vec<StreamEntry>, RpcError> {
         let caller = self.caller()?;
         let mut out = Vec::new();
-        let mut from_offset = None;
         loop {
             let params = StreamReadParams { topic: topic.into(), from_offset, since_ms: Some(since_ms), limit: Some(5000) };
             let result: StreamReadResult = read(&caller, methods::STREAM_READ, json!(params)).await?;

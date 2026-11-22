@@ -1,10 +1,12 @@
 /**
  * Error flow and Metrics flow: what the apps of the managed repositories reported about themselves
  * (`manage.reports.read`), kept a week. One stack, the same for both: the kept days as the only
- * navigation, the figures, when it happened by the minute, the filters, and the rows themselves.
- * Every name is a filter; pick it again to drop it. The board's bar chooses the repository and the
- * computer. Metrics flow shows the model calls (every one: model, tag, the computer that served it,
- * tokens) or the methods the apps served.
+ * navigation, the figures, when it happened by the five minutes, the filters, and the rows
+ * themselves. Every name is a filter; pick it again to drop it. The board's bar chooses the
+ * repository and the computer. Error flow shows errors and panics (the apps never send warnings)
+ * and the call sites that flooded a log. Metrics flow shows the model calls (summed per five
+ * minutes by model, tag, the computer that served them and outcome) or the methods the apps served
+ * (summed per five minutes).
  */
 
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -117,7 +119,6 @@ const num = (value: unknown) => (typeof value === 'number' ? value : 0);
 const ERROR_KINDS: Array<[string, string]> = [
   ['panic', 'panic'],
   ['error', 'error'],
-  ['warning', 'warning'],
   ['http_status', 'failed answer'],
   ['log_flood', 'log flood'],
   ['ui_render', 'view failed'],
@@ -158,7 +159,11 @@ export function useFlow(table: Table | null, repo: string, node: string) {
   const answer = useQuery<Answer>(
     key,
     async (client: Client) => client.call<Answer>('manage.reports.read', { table, repo, node, from: span?.from ?? '', to: span?.to ?? '' }),
-    { topics: [CHANGED] },
+    // New reports; on Error flow also a request, whose state each failure shows.
+    { topics: [CHANGED], when: (_topic, data) => {
+      const what = (data as { what?: string } | null)?.what;
+      return what === 'reports' || (table === 'errors' && what === 'request');
+    } },
   );
   const [computers, setComputers] = useState<Computer[]>([]);
   useEffect(() => {
@@ -530,7 +535,8 @@ function ErrorBody({ rows, all, span, filters, toggle, open, setOpen, requests =
   const fig = useMemo(() => {
     const f = { failures: 0, places: new Set<string>(), server: 0, iface: 0, panics: 0, floods: 0, versions: new Set<string>() };
     for (const row of rows) {
-      f.failures += row.count;
+      // A flood is a log writing too much, not a failure: it has its own figure.
+      if (row.kind !== 'log_flood') f.failures += row.count;
       f.places.add(`${str(row.repo)}|${str(row.fingerprint)}`);
       if (row.source === 'interface') f.iface += row.count;
       else f.server += row.count;
@@ -653,7 +659,7 @@ function PlaceDetail({ place, span, request, openRequest, refresh }: { place: Pl
         <span className="cf-k">app</span><span>{place.apps.join(', ')}</span>
         <span className="cf-k">versions</span><span>{place.versions.join(', ')}</span>
         <span className="cf-k">computers</span><span>{place.computers.join(', ')}</span>
-        <span className="cf-k">seen</span><span>{fmtInt(place.count)} times, {stamp(place.first, span)} – {stamp(place.last, span)} UTC, in {fmtInt(place.rows.length)} minutes</span>
+        <span className="cf-k">seen</span><span>{fmtInt(place.count)} times, {stamp(place.first, span)} – {stamp(place.last, span)} UTC, in {fmtInt(place.rows.length)} five-minute windows</span>
         <span className="cf-k">group</span><span>{fingerprint}</span>
         <span className="cf-k">request</span><span>{request ? `${request.id} · ${request.state}` : 'none'}</span>
       </div>
@@ -844,7 +850,7 @@ function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
         <span className="cf-k">method</span><span>{entry.method}</span>
         <span className="cf-k">app</span><span>{entry.app} · {entry.part}</span>
         <span className="cf-k">outcomes</span><span>{outcomes.map(([outcome, n]) => `${kindLabel('calls', outcome)} ${fmtInt(n)}`).join(' · ')}</span>
-        <span className="cf-k">served</span><span>{fmtInt(entry.calls)} times in {fmtInt(entry.rows.length)} minutes, the last at {stamp(entry.last, span)} UTC</span>
+        <span className="cf-k">served</span><span>{fmtInt(entry.calls)} times in {fmtInt(entry.rows.length)} five-minute windows, the last at {stamp(entry.last, span)} UTC</span>
         {(entry.prompt > 0 || entry.completion > 0) && <><span className="cf-k">tokens</span><span>{fmtInt(entry.prompt)} in ({fmtInt(entry.cached)} cached) · {fmtInt(entry.completion)} out</span></>}
       </div>
       <Timeline table="calls" rows={entry.rows} span={span} compact />
@@ -860,14 +866,18 @@ function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
 
 // ---- Model calls --------------------------------------------------------------------------------
 
-/** Calls drawn in the table at most; the figures and filters count every one. */
-const SHOWN_CALLS = 500;
+/** Rows (one model's calls of five minutes) drawn in the table at most; the figures and filters
+ * count every one. */
+const SHOWN_ROWS = 500;
 
 const tokensOf = (row: Row) => num(row.prompt_tokens) + num(row.completion_tokens);
 
 function fmtMs(ms: number): string {
   return fmtUs(ms * 1000);
 }
+
+/** The calls a row sums. */
+const callsOf = (row: Row) => num(row.count) || 1;
 
 /** The model as the row names it; a call no claim placed ran on the app's own model. */
 const modelOf = (row: Row) => str(row.model_id) || str(row.plugin) || 'own model';
@@ -876,8 +886,8 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
   const fig = useMemo(() => {
     const f = { calls: 0, failed: 0, prompt: 0, cached: 0, completion: 0, reasoning: 0, wallMs: 0, decodeMs: 0, models: new Set<string>(), servers: new Set<string>() };
     for (const row of rows) {
-      f.calls += 1;
-      if (row.outcome !== 'ok') f.failed += 1;
+      f.calls += callsOf(row);
+      if (row.outcome !== 'ok') f.failed += callsOf(row);
       f.prompt += num(row.prompt_tokens);
       f.cached += num(row.cached_tokens);
       f.completion += num(row.completion_tokens);
@@ -890,7 +900,7 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
     return f;
   }, [rows]);
   const ordered = useMemo(() => [...rows].sort((a, b) => b.last_at_ms - a.last_at_ms), [rows]);
-  const shown = ordered.slice(0, SHOWN_CALLS);
+  const shown = ordered.slice(0, SHOWN_ROWS);
   const days = Math.round((dayStartMs(span.to) - dayStartMs(span.from)) / DAY_MS) + 1;
   const filtered = Object.values(filters).some((value) => value != null);
   return (
@@ -913,12 +923,12 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
       <Section title="Who spends">
         <Facets table="models" facets={MODEL_FACETS} all={all} filters={filters} toggle={toggle} unit="tokens" weigh={tokensOf} format={fmtTokens} />
       </Section>
-      <Section title="Calls" count={rows.length > SHOWN_CALLS ? `the last ${fmtInt(SHOWN_CALLS)} of ${fmtInt(rows.length)}` : fmtInt(rows.length)}>
+      <Section title="Calls by five minutes" count={rows.length > SHOWN_ROWS ? `the last ${fmtInt(SHOWN_ROWS)} of ${fmtInt(rows.length)}` : fmtInt(rows.length)}>
         {rows.length === 0 ? <p className="cm-flow-empty">No model was called in these days{filtered ? ' under these filters' : ''}.</p> : (
           <div className="cm-flow-tbl-wrap">
             <table className="tbl cm-flow-tbl">
               <thead>
-                <tr><th>ended</th><th>model</th><th>tag</th><th>served by</th><th>app</th><th>part</th><th className="cf-r">in</th><th className="cf-r">cached</th><th className="cf-r">out</th><th className="cf-r">reasoning</th><th className="cf-r">time</th><th>finish</th></tr>
+                <tr><th>ended</th><th>model</th><th>tag</th><th>served by</th><th>app</th><th>part</th><th className="cf-r">calls</th><th className="cf-r">in</th><th className="cf-r">cached</th><th className="cf-r">out</th><th className="cf-r">reasoning</th><th className="cf-r">mean</th><th className="cf-r">longest</th><th>finish</th></tr>
               </thead>
               <tbody>
                 {shown.map((row) => {
@@ -932,14 +942,16 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
                         <td>{str(row.served_by)}{row.tier ? <span className="cf-dim"> · {str(row.tier)}</span> : null}</td>
                         <td className="cf-dim">{str(row.app)}</td>
                         <td className="cf-dim">{str(row.part)}</td>
+                        <td className="cf-r num">{fmtInt(callsOf(row))}</td>
                         <td className="cf-r num">{fmtInt(num(row.prompt_tokens))}</td>
                         <td className="cf-r num cf-dim">{fmtInt(num(row.cached_tokens))}</td>
                         <td className="cf-r num">{fmtInt(num(row.completion_tokens))}</td>
                         <td className="cf-r num cf-dim">{fmtInt(num(row.reasoning_tokens))}</td>
-                        <td className="cf-r num cf-dim">{fmtMs(num(row.wall_ms))}</td>
+                        <td className="cf-r num cf-dim">{fmtMs(num(row.wall_ms) / callsOf(row))}</td>
+                        <td className="cf-r num cf-dim">{fmtMs(num(row.max_wall_ms))}</td>
                         <td className={row.outcome === 'ok' ? 'cf-dim' : 'cf-bad'}>{row.outcome === 'ok' ? str(row.finish) : str(row.outcome)}</td>
                       </tr>
-                      {open === key && <tr><td colSpan={12} className="cf-detail-cell"><ModelDetail row={row} span={span} /></td></tr>}
+                      {open === key && <tr><td colSpan={14} className="cf-detail-cell"><ModelDetail row={row} span={span} /></td></tr>}
                     </Fragment>
                   );
                 })}
@@ -953,16 +965,19 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
 }
 
 function ModelDetail({ row, span }: { row: Row; span: Span }) {
+  const calls = callsOf(row);
   const decode = num(row.decode_ms);
+  const mean = (field: string) => fmtMs(num(row[field]) / calls);
   const lines: Array<[string, string]> = [
     ['model', `${modelOf(row)}${row.plugin && row.model_id ? ` · ${str(row.plugin)}` : ''}`],
     ['tag', str(row.tag) || 'not claimed'],
     ['served by', `${str(row.served_by)}${row.tier ? ` · ${str(row.tier)}` : ''}${row.served_node ? ` · ${str(row.served_node)}` : ''}`],
     ['asked by', `${str(row.app)} ${str(row.app_version)} · ${str(row.part)} · ${str(row.computer)}`],
     ['method', str(row.method)],
+    ['calls', `${fmtInt(calls)} in these five minutes`],
     ['tokens', `${fmtInt(num(row.prompt_tokens))} in (${fmtInt(num(row.cached_tokens))} cached) · ${fmtInt(num(row.completion_tokens))} out (${fmtInt(num(row.reasoning_tokens))} reasoning)`],
-    ['times', `queue ${fmtMs(num(row.queue_ms))} · prefill ${fmtMs(num(row.prefill_ms))} · decode ${fmtMs(decode)}${decode ? ` (${(num(row.completion_tokens) / (decode / 1000)).toFixed(0)} tok/s)` : ''} · in all ${fmtMs(num(row.wall_ms))}`],
-    ['ended', `${stamp(row.last_at_ms, span)} UTC · ${row.outcome === 'ok' ? str(row.finish) : str(row.outcome)}`],
+    ['mean times', `queue ${mean('queue_ms')} · prefill ${mean('prefill_ms')} · decode ${mean('decode_ms')}${decode ? ` (${(num(row.completion_tokens) / (decode / 1000)).toFixed(0)} tok/s)` : ''} · in all ${mean('wall_ms')}, the longest ${fmtMs(num(row.max_wall_ms))}`],
+    ['between', `${stamp(row.first_at_ms, span)} – ${stamp(row.last_at_ms, span)} UTC · ${row.outcome === 'ok' ? str(row.finish) : str(row.outcome)}`],
   ];
   return (
     <div className="cm-flow-detail">

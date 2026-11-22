@@ -1,22 +1,116 @@
 //! Reports an app sends about itself (`contracts::reports`). They are kept when the sender's
 //! repository is managed here: the GitHub repository a person set on it is the sender's, exactly
-//! (GitHub's names do not tell capitals apart). Every row goes to the repository's reports stream,
-//! kept a week. An error or a panic is also a failure to repair: it opens a request in the normal
-//! flow, or adds to the open request of the same fingerprint.
+//! (GitHub's names do not tell capitals apart). Only the standard's tables are kept (`errors`,
+//! `calls`, `models`). Every row goes to the repository's reports stream, kept a week, once: a row
+//! whose event id the stream holds already is not kept again. The sender hears `accepted` only once
+//! the rows are in the graph. An error or a panic is also a failure to repair: it opens a request in
+//! the normal flow, or adds to the open request of the same fingerprint.
 
 use crate::service::Manager;
 use crate::store::RepoRec;
 use cc_protocol::contracts::manage::{From, RequestCreateParams};
 use cc_protocol::contracts::now_ms;
 use cc_protocol::contracts::reports::{ErrorRecord, SendParams, SendResult, Sender, tables};
+use cc_protocol::contracts::memory::StreamEntry;
 use cc_protocol::{RpcError, parse_params, to_value};
 use serde_json::{Value, json};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Days the reports stream keeps a row.
 const KEEP_DAYS: u32 = 7;
 /// The most of a stack a request's text carries.
 const STACK_CHARS: usize = 4000;
+/// How long the flow pages' "new reports" is held so that the pieces of one delivery are one read.
+const CHANGED_AFTER: Duration = Duration::from_secs(2);
+
+/// The reports streams as far as this process has read them, by topic and table: the Error flow
+/// and Metrics flow pages read only the records appended since the last read. Not a record: the
+/// stream in the graph is; this is what was read of it, gone with the process.
+#[derive(Default)]
+pub struct Cache {
+    reads: std::sync::Mutex<HashMap<String, Read>>,
+    /// Repositories whose "new reports" is waiting to be published.
+    changing: std::sync::Mutex<HashSet<String>>,
+}
+
+#[derive(Default, Clone)]
+struct Read {
+    /// The offset after the last record read.
+    next: Option<u64>,
+    /// Each table's kept records, oldest first.
+    tables: HashMap<String, Arc<Vec<StreamEntry>>>,
+    /// The event ids of the kept records, with when each was appended.
+    ids: HashMap<String, u64>,
+}
+
+impl Cache {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Read>> {
+        self.reads.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The rows whose event id the stream does not hold yet (each once).
+    async fn unseen(&self, manager: &Manager, topic: &str, rows: &[Value]) -> Result<Vec<Value>, RpcError> {
+        let since = now_ms().saturating_sub((KEEP_DAYS as u64 + 1) * DAY_MS as u64);
+        self.table(manager, topic, "", since).await?;
+        let reads = self.lock();
+        let known = reads.get(topic).map(|read| &read.ids);
+        let mut taken: HashSet<&str> = HashSet::new();
+        Ok(rows
+            .iter()
+            .filter(|row| {
+                let Some(id) = row.get("event_id").and_then(Value::as_str) else { return true };
+                !known.is_some_and(|ids| ids.contains_key(id)) && taken.insert(id)
+            })
+            .cloned()
+            .collect())
+    }
+
+    /// Publish "new reports" for a repository once, a moment after its first piece.
+    fn changed(&self, manager: &Arc<Manager>, repo_id: &str) {
+        let first = self.changing.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(repo_id.to_owned());
+        if !first {
+            return;
+        }
+        let manager = manager.clone();
+        let repo_id = repo_id.to_owned();
+        tokio::spawn(async move {
+            tokio::time::sleep(CHANGED_AFTER).await;
+            manager.reports.changing.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(&repo_id);
+            manager.changed("reports", "", &repo_id);
+        });
+    }
+
+    /// One table of a stream from `since` on: what was read before, and what came after it.
+    async fn table(&self, manager: &Manager, topic: &str, table: &str, since: u64) -> Result<Arc<Vec<StreamEntry>>, RpcError> {
+        let next = self.lock().get(topic).and_then(|read| read.next);
+        let fresh = manager.store.graph.since_from(topic, next, since).await?;
+        let mut reads = self.lock();
+        let read = reads.entry(topic.to_owned()).or_default();
+        let after = read.next.unwrap_or(0);
+        for entry in fresh {
+            // Another page's read may have taken these already.
+            if read.next.is_some() && entry.offset < after {
+                continue;
+            }
+            read.next = Some(entry.offset + 1);
+            if let Some(id) = entry.value.get("row").and_then(|row| row.get("event_id")).and_then(Value::as_str) {
+                read.ids.insert(id.to_owned(), entry.at_ms);
+            }
+            let name = entry.value.get("table").and_then(Value::as_str).unwrap_or_default().to_owned();
+            Arc::make_mut(read.tables.entry(name).or_default()).push(entry);
+        }
+        for entries in read.tables.values_mut() {
+            let old = entries.partition_point(|entry| entry.at_ms < since);
+            if old > 0 {
+                Arc::make_mut(entries).drain(..old);
+            }
+        }
+        read.ids.retain(|_, at| *at >= since);
+        Ok(read.tables.get(table).cloned().unwrap_or_default())
+    }
+}
 
 /// The stream of one repository's reports.
 pub fn topic(repo: &str) -> String {
@@ -25,6 +119,9 @@ pub fn topic(repo: &str) -> String {
 
 pub async fn send(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcError> {
     let params: SendParams = parse_params(params)?;
+    if !tables::ALL.contains(&params.table.as_str()) {
+        return Err(RpcError::invalid_params(format!("no table `{}`: the tables are {}", params.table, tables::ALL.join(", "))));
+    }
     let wanted = params.sender.repo.trim();
     let repo: Option<RepoRec> = manager.store.read(|data| {
         data.repos
@@ -36,8 +133,9 @@ pub async fn send(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcErr
         return to_value(&SendResult { accepted: false, reason: format!("{wanted} is not managed here") });
     };
     let now = now_ms();
-    let kept: Vec<Value> = params
-        .rows
+    let stream = topic(&repo.repo.id);
+    let rows = manager.reports.unseen(manager, &stream, &params.rows).await?;
+    let kept: Vec<Value> = rows
         .iter()
         .map(|row| {
             json!({
@@ -54,9 +152,17 @@ pub async fn send(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcErr
             })
         })
         .collect();
-    manager.store.graph.append(&topic(&repo.repo.id), kept, Some(KEEP_DAYS));
+    if kept.is_empty() {
+        return to_value(&SendResult { accepted: true, reason: String::new() });
+    }
+    manager.store.graph.append(&stream, kept, Some(KEEP_DAYS));
+    // Accepted only once the rows are in the graph: the sender then marks them sent.
+    if !manager.store.graph.flush().await {
+        return Err(RpcError::new(cc_protocol::codes::UNAVAILABLE, "the reports could not be kept now; send them again"));
+    }
+    manager.reports.changed(manager, &repo.repo.id);
     if params.table == tables::ERRORS {
-        for row in &params.rows {
+        for row in &rows {
             let Ok(record) = serde_json::from_value::<ErrorRecord>(row.clone()) else { continue };
             if record.is_failure() {
                 failure(manager, &repo, &params.sender, record).await;
@@ -90,11 +196,8 @@ pub async fn read(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcErr
         if !repos.contains(&repo) || (!only_repo.is_empty() && repo != only_repo) {
             continue;
         }
-        for entry in manager.store.graph.since(&name, since).await? {
-            let kept = entry.value;
-            if kept.get("table").and_then(Value::as_str) != Some(table.as_str()) {
-                continue;
-            }
+        for entry in manager.reports.table(manager, &name, &table, since).await?.iter() {
+            let kept = &entry.value;
             let node = kept.get("node").and_then(Value::as_str).unwrap_or_default().to_owned();
             let machine = kept.get("machine").and_then(Value::as_str).unwrap_or_default().to_owned();
             if !node.is_empty() {
@@ -105,12 +208,11 @@ pub async fn read(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcErr
             }
             let Some(Value::Object(mut row)) = kept.get("row").cloned() else { continue };
             if table == tables::MODELS {
-                // One row is one call: its times as the other tables name theirs.
+                // A row sums one bucket's calls: its times as the other tables name theirs.
                 let started = row.get("started_at_ms").cloned().unwrap_or(Value::Null);
                 let ended = row.get("ended_at_ms").cloned().unwrap_or(Value::Null);
                 row.insert("first_at_ms".into(), started);
                 row.insert("last_at_ms".into(), ended);
-                row.insert("count".into(), json!(1));
             }
             let at = row.get("first_at_ms").and_then(Value::as_i64).unwrap_or(entry.at_ms as i64);
             let day = day_of(at);

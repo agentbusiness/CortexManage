@@ -80,6 +80,8 @@ pub struct Manager {
     kick: Notify,
     pub stop: CancellationToken,
     started: AtomicBool,
+    /// The kept reports already read from the graph, so a page reads only what came since.
+    pub reports: crate::reports::Cache,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -106,6 +108,7 @@ impl Manager {
             kick: Notify::new(),
             stop: CancellationToken::new(),
             started: AtomicBool::new(false),
+            reports: crate::reports::Cache::default(),
         })
     }
 

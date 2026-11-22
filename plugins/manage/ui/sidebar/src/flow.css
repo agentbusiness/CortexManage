@@ -8,7 +8,6 @@
 /* a kind's hue: never the rubric, which marks what is chosen */
 #cc .cm-flow .cf-k-panic{--k:var(--cc-chart-s5);}
 #cc .cm-flow .cf-k-error,#cc .cm-flow .cf-k-failed{--k:var(--cc-chart-s4);}
-#cc .cm-flow .cf-k-warning{--k:var(--cc-chart-s3);}
 #cc .cm-flow .cf-k-http_status,#cc .cm-flow .cf-k-ok{--k:var(--cc-chart-s0);}
 #cc .cm-flow .cf-k-ui_render,#cc .cm-flow .cf-k-ui_error,#cc .cm-flow .cf-k-ui_rejection,#cc .cm-flow .cf-k-ui_console{--k:var(--cc-chart-s2);}
 #cc .cm-flow .cf-k-log_flood,#cc .cm-flow .cf-k-ui_request,#cc .cm-flow .cf-k-collector_dropped{--k:var(--cc-chart-context);}
