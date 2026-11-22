@@ -68,6 +68,26 @@ pub mod methods {
     pub const REPORTS_REQUEST: &str = "manage.reports.request";
     /// The shared service declaration (`<category>.shares`).
     pub const SHARES: &str = "manage.shares";
+    /// [`super::TimelineParams`] -> `{entries: [TimelineEntry]}`: what happened to every
+    /// repository's requests, newest first, and why.
+    pub const TIMELINE_READ: &str = "manage.timeline.read";
+    /// [`super::ReopenParams`] -> [`super::RequestView`]: a person reopens a request with a new
+    /// message. One that never landed starts again; one whose work is on the main branch gets a new
+    /// request that follows it.
+    pub const REQUEST_REOPEN: &str = "manage.request.reopen";
+    /// `{repo}` -> [`super::Delivery`]: learn again how the repository ships (in the background;
+    /// the answer is the profile as it is now, `state: learning`).
+    pub const DELIVERY_LEARN: &str = "manage.delivery.learn";
+    /// [`super::DeliveryEditParams`] -> [`super::Delivery`]: a person's correction; the fields
+    /// they set are kept when the profile is learned again.
+    pub const DELIVERY_EDIT: &str = "manage.delivery.edit";
+    /// `{repo}` -> `{waits: [title]}`: the requests a person said the next release waits for that
+    /// are not ready yet.
+    pub const RELEASE_WAITS: &str = "manage.release.waits";
+    /// `{}` -> `{rules}`: the rules for commits and releases of every repository.
+    pub const RULES_GET: &str = "manage.rules.get";
+    /// `{rules}` -> `{rules}`.
+    pub const RULES_EDIT: &str = "manage.rules.edit";
 }
 
 pub mod topics {
@@ -90,8 +110,11 @@ pub mod stage {
     pub const LANDED: &str = "landed";
     pub const SOAKING: &str = "soaking";
     pub const RELEASED: &str = "released";
+    /// Built and proven, waiting on its own branch for the release: in a repository whose main
+    /// branch ships (`Delivery.main_is = ships`) landing is releasing, so it lands with the train.
+    pub const READY: &str = "ready";
     /// In order, for the card's ladder.
-    pub const ALL: &[&str] = &[ARRIVED, CLARIFYING, ASSESSED, PLANNED, VALIDATED, HELD, BUILDING, PROVING, LANDED, SOAKING, RELEASED];
+    pub const ALL: &[&str] = &[ARRIVED, CLARIFYING, ASSESSED, PLANNED, VALIDATED, HELD, BUILDING, PROVING, READY, LANDED, SOAKING, RELEASED];
 }
 
 /// How a request ended (`Request.ended_as`).
@@ -170,6 +193,156 @@ pub struct Source {
     /// repository send their reports here (`contracts::reports`). Empty: no reports.
     #[serde(default)]
     pub github: String,
+    /// The GitHub connection the repository is reached with (`vcs.github.connections`): empty, the
+    /// sign-in of Settings > GitHub.
+    #[serde(default)]
+    pub connection: String,
+}
+
+/// How a repository's changes reach people, learned from the files it declares it in and from the
+/// rules GitHub holds for it, and corrected by a person. Every learned value names where it was
+/// read ([`DeliveryFact`]); a value nothing declares stays empty.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Delivery {
+    /// empty (never learned) | learning | learned | failed.
+    #[serde(default)]
+    pub state: String,
+    /// Why the last learning failed.
+    #[serde(default)]
+    pub error: String,
+    #[serde(default)]
+    pub learned_ms: u64,
+    /// direct (commits go straight to main) | pr (by pull request) | pr-review (a person must
+    /// approve the pull request on GitHub).
+    #[serde(default)]
+    pub reach_main: String,
+    /// collects (nothing happens when main moves) | ships (a change on main is built and deployed).
+    #[serde(default)]
+    pub main_is: String,
+    /// steps (commands on the release machine) | merge (landing on main is the release) | tag (a
+    /// pushed tag releases) | none.
+    #[serde(default)]
+    pub release_kind: String,
+    /// The commands a release runs, in order, from the repository's top folder. `{version}` is
+    /// the version the release gets, when the version is given.
+    #[serde(default)]
+    pub release_steps: Vec<String>,
+    /// A command that says what a release would ship, without shipping.
+    #[serde(default)]
+    pub plan_step: String,
+    /// The tag a `tag` release pushes, with `{version}`.
+    #[serde(default)]
+    pub tag: String,
+    /// by-script (the release sets it) | given (CortexManage works out the next and passes it) |
+    /// commit (the commit is the version) | none.
+    #[serde(default)]
+    pub version_kind: String,
+    /// Where the version is written: a file, and the key in it (`[workspace.package] version`).
+    #[serde(default)]
+    pub version_file: String,
+    #[serde(default)]
+    pub version_key: String,
+    /// The version the last release shipped (a given version is worked out from it).
+    #[serde(default)]
+    pub version_now: String,
+    /// Commands that must pass in a change's worktree before it lands.
+    #[serde(default)]
+    pub checks: Vec<String>,
+    /// What a release ships, in a line.
+    #[serde(default)]
+    pub ships: String,
+    /// The CI workflow that builds and deploys main (its file), for `merge` and `tag`.
+    #[serde(default)]
+    pub ci: String,
+    /// How a release is taken back, in a line.
+    #[serde(default)]
+    pub take_back: String,
+    /// The secrets a release needs, by name only (never a value).
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    /// Files a release reads that are not in git (`.env.release`), and the folder on the release
+    /// machine they are taken from (a person sets it).
+    #[serde(default)]
+    pub secret_files: Vec<String>,
+    #[serde(default)]
+    pub secrets_from: String,
+    #[serde(default)]
+    pub facts: Vec<DeliveryFact>,
+    /// The fields a person set: learning again leaves them as they are.
+    #[serde(default)]
+    pub set_by_person: Vec<String>,
+    /// Releases that failed in a row since the last one that went out (each opens a repair).
+    #[serde(default)]
+    pub failed_releases: u32,
+    /// The files the profile was learned from, and their hashes: when one changes, it is learned
+    /// again.
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub hashes: Vec<String>,
+}
+
+/// Where one value of a profile was read: a file and line of the repository and the words there,
+/// or `github:rules` / `github:workflows` / `github:pulls` for what GitHub declares.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DeliveryFact {
+    pub field: String,
+    pub path: String,
+    #[serde(default)]
+    pub line: u32,
+    pub quote: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DeliveryEditParams {
+    pub repo: String,
+    /// `[field, value]`; a list field takes one item per line.
+    pub set: Vec<(String, String)>,
+}
+
+/// One thing that happened to a request, as the Timeline shows it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TimelineEntry {
+    pub repo: String,
+    #[serde(default)]
+    pub repo_name: String,
+    /// arrived | merged | closed (already done) | declined | withdrawn | landed | ready |
+    /// released | release_failed | reopened | waits.
+    pub event: String,
+    #[serde(default)]
+    pub request: String,
+    #[serde(default)]
+    pub title: String,
+    /// Why, in a sentence.
+    #[serde(default)]
+    pub why: String,
+    /// you | model | rule | app.
+    #[serde(default)]
+    pub by: String,
+    /// What it points at: another request, a commit, versions.
+    #[serde(default)]
+    pub link: String,
+    #[serde(default)]
+    pub versions: Vec<String>,
+    pub ms: u64,
+    /// Whether the request can be reopened now.
+    #[serde(default)]
+    pub reopen: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TimelineParams {
+    /// From this moment (default: seven days ago) to `before_ms` (default: now).
+    #[serde(default)]
+    pub since_ms: u64,
+    #[serde(default)]
+    pub before_ms: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ReopenParams {
+    pub id: String,
+    pub text: String,
 }
 
 /// Per repository; a global policy can only be stricter.
@@ -253,6 +426,11 @@ pub struct Repo {
     pub managed: bool,
     #[serde(default)]
     pub created_ms: u64,
+    #[serde(default)]
+    pub delivery: Delivery,
+    /// The person's rules for this repository's commits and releases, as they wrote them.
+    #[serde(default)]
+    pub rules: String,
 }
 
 fn yes() -> bool {
@@ -290,6 +468,8 @@ pub struct RepoEditParams {
     pub policy: Option<Policy>,
     #[serde(default)]
     pub managed: Option<bool>,
+    #[serde(default)]
+    pub rules: Option<String>,
 }
 
 /// Who a request came from.
@@ -363,6 +543,15 @@ pub struct Request {
     pub seen: u64,
     #[serde(default)]
     pub seen_last_ms: u64,
+    /// The request this one follows (reopened after its work landed).
+    #[serde(default)]
+    pub follows: String,
+    /// A person said the next release waits for it.
+    #[serde(default)]
+    pub must_ship: bool,
+    /// It repairs a release that failed: when it lands, the release runs again at once.
+    #[serde(default)]
+    pub repairs_release: bool,
 }
 
 /// One question of the clarify form.
@@ -438,6 +627,9 @@ pub struct RequestEditParams {
     /// The person moved it back: plan it again.
     #[serde(default)]
     pub replan: bool,
+    /// The next release waits for it (true) or not (false).
+    #[serde(default)]
+    pub must_ship: Option<bool>,
 }
 
 /// The five columns of the board, in a person's words.
@@ -871,6 +1063,14 @@ pub mod flow {
     pub const DIGEST: &str = "chatflow-manage.digest";
     /// `{facts}` -> [`super::WhyAnswer`]: the inbox item's words.
     pub const WHY: &str = "chatflow-manage.why";
+    /// [`super::DeliveryParams`] -> [`super::DeliveryAnswer`]: how a repository ships, read from
+    /// its files (read-only tools on GitHub) and from what GitHub declares.
+    pub const DELIVERY: &str = "chatflow-manage.delivery";
+    /// [`super::CommitParams`] -> `{message}`: the commit message of one request's work.
+    pub const COMMIT: &str = "chatflow-manage.commit";
+    /// [`super::RulesParams`] -> [`super::RulesAnswer`]: does a change or its messages break one of
+    /// the person's rules.
+    pub const RULES: &str = "chatflow-manage.rules";
 }
 
 /// The journal entry kinds the manage plugin writes into a request's session, beside the frame's
@@ -945,6 +1145,10 @@ pub struct DiscoverParams {
     pub lines: Option<u32>,
     #[serde(default)]
     pub limit: Option<u32>,
+    /// `github`: read the repository's main branch on GitHub, with its connection, rather than a
+    /// runner's mirror.
+    #[serde(default)]
+    pub via: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -1059,6 +1263,64 @@ pub struct ConvergeAnswer {
     /// Points the diff does not do: `[n, why]`.
     #[serde(default)]
     pub missing: Vec<(u32, String)>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DeliveryParams {
+    /// The repository's id, for `manage.discover.*` (with `via: github`).
+    pub repo: String,
+    pub repo_name: String,
+    /// What GitHub declares about the main branch, the workflows and the merged pull requests, as
+    /// text; each item starts with its source (`github:rules`, ...).
+    #[serde(default)]
+    pub github: String,
+    /// The main branch.
+    #[serde(default)]
+    pub main: String,
+}
+
+/// The DELIVERY stage's answer: the profile's values, each with where it was read. The manage
+/// plugin keeps a value only when its quote is found where it says.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DeliveryAnswer {
+    pub values: Vec<(String, String)>,
+    pub facts: Vec<DeliveryFact>,
+    /// The files read.
+    #[serde(default)]
+    pub read: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct CommitParams {
+    pub title: String,
+    pub text: String,
+    pub diff: String,
+    #[serde(default)]
+    pub rules: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct RulesParams {
+    pub rules: String,
+    pub diff: String,
+    /// The commit messages, one per request.
+    #[serde(default)]
+    pub messages: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct RulesAnswer {
+    pub breaks: bool,
+    /// The changed file, or `message` for a commit message.
+    #[serde(default)]
+    pub file: String,
+    /// The words that break it, quoted.
+    #[serde(default)]
+    pub quote: String,
+    #[serde(default)]
+    pub rule: String,
+    #[serde(default)]
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

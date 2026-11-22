@@ -19,7 +19,7 @@
 
 use crate::graph::{self, Graph, at, edge, machine, node, props};
 use cc_protocol::RpcError;
-use cc_protocol::contracts::manage::{Ask, Evidence, Finding, From, Gate, Intervention, Package, Plan, Point, Policy, Question, Repo, Request, Source, Strip, Tier, Walk};
+use cc_protocol::contracts::manage::{Ask, Delivery, DeliveryFact, Evidence, Finding, From, Gate, Intervention, Package, Plan, Point, Policy, Question, Repo, Request, Source, Strip, Tier, Walk};
 use cc_protocol::contracts::now_ms;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -38,6 +38,7 @@ const GATE: &str = "Gate";
 const EVIDENCE: &str = "Evidence";
 const INTERVENTION: &str = "Intervention";
 const DECISION: &str = "Decision";
+const DELIVERY: &str = "Delivery";
 const STATE: &str = "ManageState";
 const STATE_KEY: &str = "manage";
 /// Rows per read.
@@ -75,6 +76,10 @@ pub struct ReqRec {
     pub start_wish: String,
     /// The person took it off the board after it landed (its code stays).
     pub hidden: bool,
+    /// A person reopened it: it is never merged into other work by itself again.
+    pub reopened: bool,
+    /// The commit message its work lands with (written when its package passed its gates).
+    pub commit_message: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -123,6 +128,8 @@ pub struct Data {
     pub strips: BTreeMap<String, Strip>,
     /// The Hold switch.
     pub hold: bool,
+    /// The person's rules for the commits and releases of every repository.
+    pub rules: String,
     pub package_seq: u32,
     pub ask_seq: u32,
     pub evidence_seq: u32,
@@ -221,6 +228,8 @@ fn repo_props(rec: &RepoRec) -> Map<String, Value> {
         ("source_commit_name", json!(repo.source.commit_name)),
         ("source_commit_email", json!(repo.source.commit_email)),
         ("source_github", json!(repo.source.github)),
+        ("source_connection", json!(repo.source.connection)),
+        ("rules", json!(repo.rules)),
         ("runner", json!(repo.runner)),
         ("runner_name", json!(repo.runner_name)),
         ("managed", json!(repo.managed)),
@@ -283,12 +292,16 @@ fn repo_from(p: &Map<String, Value>) -> RepoRec {
                 commit_name: graph::text(p, "source_commit_name"),
                 commit_email: graph::text(p, "source_commit_email"),
                 github: graph::text(p, "source_github"),
+                connection: graph::text(p, "source_connection"),
             },
             runner: graph::text(p, "runner"),
             runner_name: graph::text(p, "runner_name"),
             policy,
             managed: p.get("managed").and_then(Value::as_bool).unwrap_or(true),
             created_ms: num(p, "created_ms"),
+            // Read from its own node after the repositories.
+            delivery: Delivery::default(),
+            rules: graph::text(p, "rules"),
         },
         project_id: graph::text(p, "project_id"),
         request_seq: num(p, "request_seq") as u32,
@@ -320,6 +333,11 @@ fn request_props(rec: &ReqRec) -> Map<String, Value> {
         ("because", json!(rec.because)),
         ("start_wish", json!(rec.start_wish)),
         ("hidden", json!(rec.hidden)),
+        ("reopened", json!(rec.reopened)),
+        ("commit_message", json!(rec.commit_message)),
+        ("follows", json!(r.follows)),
+        ("must_ship", json!(r.must_ship)),
+        ("repairs_release", json!(r.repairs_release)),
         ("surface", list(&r.surface)),
         ("urgent", json!(r.urgent)),
         ("urgent_because", json!(r.urgent_because)),
@@ -371,6 +389,9 @@ fn request_from(p: &Map<String, Value>) -> ReqRec {
             fingerprint: graph::text(p, "fingerprint"),
             seen: num(p, "seen"),
             seen_last_ms: num(p, "seen_last_ms"),
+            follows: graph::text(p, "follows"),
+            must_ship: graph::flag(p, "must_ship"),
+            repairs_release: graph::flag(p, "repairs_release"),
         },
         stages,
         tier_model: tier(p, "tier_model"),
@@ -385,6 +406,80 @@ fn request_from(p: &Map<String, Value>) -> ReqRec {
         because: graph::text(p, "because"),
         start_wish: graph::text(p, "start_wish"),
         hidden: graph::flag(p, "hidden"),
+        reopened: graph::flag(p, "reopened"),
+        commit_message: graph::text(p, "commit_message"),
+    }
+}
+
+fn delivery_props(delivery: &Delivery) -> Map<String, Value> {
+    let d = delivery;
+    props([
+        ("of", json!(OF)),
+        ("state", json!(d.state)),
+        ("error", json!(d.error)),
+        ("learned_ms", json!(d.learned_ms)),
+        ("reach_main", json!(d.reach_main)),
+        ("main_is", json!(d.main_is)),
+        ("release_kind", json!(d.release_kind)),
+        ("release_steps", list(&d.release_steps)),
+        ("plan_step", json!(d.plan_step)),
+        ("tag", json!(d.tag)),
+        ("version_kind", json!(d.version_kind)),
+        ("version_file", json!(d.version_file)),
+        ("version_key", json!(d.version_key)),
+        ("version_now", json!(d.version_now)),
+        ("checks", list(&d.checks)),
+        ("ships", json!(d.ships)),
+        ("ci", json!(d.ci)),
+        ("take_back", json!(d.take_back)),
+        ("secrets", list(&d.secrets)),
+        ("secret_files", list(&d.secret_files)),
+        ("secrets_from", json!(d.secrets_from)),
+        // Where each value was read, as four lists of the same length.
+        ("fact_fields", list(&d.facts.iter().map(|fact| fact.field.clone()).collect::<Vec<_>>())),
+        ("fact_paths", list(&d.facts.iter().map(|fact| fact.path.clone()).collect::<Vec<_>>())),
+        ("fact_lines", list(&d.facts.iter().map(|fact| fact.line).collect::<Vec<_>>())),
+        ("fact_quotes", list(&d.facts.iter().map(|fact| fact.quote.clone()).collect::<Vec<_>>())),
+        ("set_by_person", list(&d.set_by_person)),
+        ("failed_releases", json!(d.failed_releases)),
+        ("files", list(&d.files)),
+        ("hashes", list(&d.hashes)),
+    ])
+}
+
+fn delivery_from(p: &Map<String, Value>) -> Delivery {
+    let (fields, paths, lines, quotes) = (graph::texts(p, "fact_fields"), graph::texts(p, "fact_paths"), numbers(p, "fact_lines"), graph::texts(p, "fact_quotes"));
+    let facts = fields
+        .into_iter()
+        .enumerate()
+        .map(|(at, field)| DeliveryFact { field, path: paths.get(at).cloned().unwrap_or_default(), line: lines.get(at).copied().unwrap_or(0) as u32, quote: quotes.get(at).cloned().unwrap_or_default() })
+        .collect();
+    Delivery {
+        state: graph::text(p, "state"),
+        error: graph::text(p, "error"),
+        learned_ms: num(p, "learned_ms"),
+        reach_main: graph::text(p, "reach_main"),
+        main_is: graph::text(p, "main_is"),
+        release_kind: graph::text(p, "release_kind"),
+        release_steps: graph::texts(p, "release_steps"),
+        plan_step: graph::text(p, "plan_step"),
+        tag: graph::text(p, "tag"),
+        version_kind: graph::text(p, "version_kind"),
+        version_file: graph::text(p, "version_file"),
+        version_key: graph::text(p, "version_key"),
+        version_now: graph::text(p, "version_now"),
+        checks: graph::texts(p, "checks"),
+        ships: graph::text(p, "ships"),
+        ci: graph::text(p, "ci"),
+        take_back: graph::text(p, "take_back"),
+        secrets: graph::texts(p, "secrets"),
+        secret_files: graph::texts(p, "secret_files"),
+        secrets_from: graph::text(p, "secrets_from"),
+        facts,
+        set_by_person: graph::texts(p, "set_by_person"),
+        failed_releases: num(p, "failed_releases") as u32,
+        files: graph::texts(p, "files"),
+        hashes: graph::texts(p, "hashes"),
     }
 }
 
@@ -520,6 +615,13 @@ impl Store {
 
     fn save_repo(&self, rec: &RepoRec) {
         self.graph.put(vec![node(REPO, &rec.repo.id, repo_props(rec))], vec![edge((REPO, &rec.repo.id), "ON", machine())]);
+        let delivery = cc_protocol::contracts::memory::GraphNode {
+            label: DELIVERY.into(),
+            key: rec.repo.id.clone(),
+            props: delivery_props(&rec.repo.delivery),
+            temporal: temporal([("release_kind_history", json!(rec.repo.delivery.release_kind)), ("main_is_history", json!(rec.repo.delivery.main_is))]),
+        };
+        self.graph.put(vec![delivery], vec![edge((REPO, &rec.repo.id), "SHIPS_BY", at(DELIVERY, &rec.repo.id))]);
     }
 
     pub fn update_repo(&self, id: &str, change: impl FnOnce(&mut RepoRec)) -> Option<RepoRec> {
@@ -858,9 +960,14 @@ impl Store {
         self.save_state();
     }
 
+    pub fn set_rules(&self, rules: &str) {
+        self.write(|data| data.rules = rules.to_owned());
+        self.save_state();
+    }
+
     fn save_state(&self) {
-        let (hold, packages, asks, evidence) = self.read(|data| (data.hold, data.package_seq, data.ask_seq, data.evidence_seq));
-        let props = props([("of", json!(OF)), ("held", json!(hold)), ("package_seq", json!(packages)), ("ask_seq", json!(asks)), ("evidence_seq", json!(evidence))]);
+        let (hold, packages, asks, evidence, rules) = self.read(|data| (data.hold, data.package_seq, data.ask_seq, data.evidence_seq, data.rules.clone()));
+        let props = props([("of", json!(OF)), ("held", json!(hold)), ("package_seq", json!(packages)), ("ask_seq", json!(asks)), ("evidence_seq", json!(evidence)), ("rules", json!(rules))]);
         self.graph.put(vec![node(STATE, STATE_KEY, props)], vec![edge((STATE, STATE_KEY), "ON", machine())]);
     }
 
@@ -895,12 +1002,18 @@ impl Store {
             data.package_seq = num(state, "package_seq") as u32;
             data.ask_seq = num(state, "ask_seq") as u32;
             data.evidence_seq = num(state, "evidence_seq") as u32;
+            data.rules = graph::text(state, "rules");
         }
         for p in self.all(REPO).await? {
             let rec = repo_from(&p);
             // A `Repo` node another plugin made (a charter's) has no name of ours.
             if !rec.repo.name.is_empty() {
                 data.repos.insert(rec.repo.id.clone(), rec);
+            }
+        }
+        for p in self.all(DELIVERY).await? {
+            if let Some(rec) = data.repos.get_mut(&graph::text(&p, "key")) {
+                rec.repo.delivery = delivery_from(&p);
             }
         }
         for p in self.all(REQUEST).await? {

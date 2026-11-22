@@ -9,21 +9,25 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { errorMessage, setShared, useClient, useQuery, useSlotInfo } from '@cortex/sdk';
+import { Menu, errorMessage, setShared, useClient, useQuery, useSlotInfo } from '@cortex/sdk';
 import type { Repo, Selection } from './manage';
 
 interface GithubStatus { connected: boolean; login?: string | null }
 interface GithubRepo { full_name: string; private: boolean; description: string; fork: boolean; clone_url: string; default_branch: string }
 
 type Way = 'github' | 'new' | 'address';
+interface Connection { id: string; login: string; name: string }
 
 export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (next: Selection) => void }) {
   const client = useClient();
   const owner = useSlotInfo();
   const status = useQuery<GithubStatus>('vcs.github.status', (c) => c.call('vcs.github.status', {}), { topics: ['plugin.swapped'] });
-  const connected = status.data?.connected === true;
-  const repos = useQuery<GithubRepo[]>(connected ? `vcs.github.repos:${status.data?.login ?? ''}` : null,
-    async (c) => (await c.call<{ repos: GithubRepo[] }>('vcs.github.repos', {}))?.repos ?? []);
+  const connections = useQuery<Connection[]>('vcs.github.connections', async (c) => (await c.call<{ connections: Connection[] }>('vcs.github.connections', {}))?.connections ?? []);
+  // The account the repository is listed with and reached with: the sign-in, or one added beside it.
+  const [account, setAccount] = useState('');
+  const connected = status.data?.connected === true || (connections.data ?? []).some((connection) => connection.id !== '');
+  const repos = useQuery<GithubRepo[]>(connected ? `vcs.github.repos:${account || status.data?.login || ''}` : null,
+    async (c) => (await c.call<{ repos: GithubRepo[] }>('vcs.github.repos', { connection: account }))?.repos ?? []);
   const [way, setWay] = useState<Way>('github');
   const [filter, setFilter] = useState('');
   const [picked, setPicked] = useState<GithubRepo | null>(null);
@@ -58,7 +62,7 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
     const created = await client.call<Repo>('manage.repo.create', {
       name: source.name,
       prefix: '',
-      source: { kind: 'git', url: source.url, main: source.main, changes: 'none', github: source.github ?? '' },
+      source: { kind: 'git', url: source.url, main: source.main, changes: 'none', github: source.github ?? '', connection: source.github ? account : '' },
       // No computer is named: its jobs go to any free CortexCode.
       runner: '',
       runner_name: '',
@@ -120,6 +124,15 @@ export function AddRepo({ onClose, onAdded }: { onClose: () => void; onAdded: (n
             </div>
             {way === 'github' && (connected ? (
               <>
+                {(connections.data?.length ?? 0) > 1 && (
+                  <div className="fld">
+                    <Menu
+                      label="Account"
+                      value={(connections.data ?? []).find((connection) => connection.id === account)?.login ?? account}
+                      items={(connections.data ?? []).map((connection) => ({ key: connection.id || 'signin', label: connection.name || connection.login, note: connection.login, selected: connection.id === account, onSelect: () => { setAccount(connection.id); setPicked(null); } }))}
+                    />
+                  </div>
+                )}
                 <label className="fld">
                   <span className="ap faint">Your repositories</span>
                   <input type="text" value={filter} placeholder="Type to filter" spellCheck={false} autoComplete="off" data-field="filter" onChange={(event) => setFilter(event.target.value)} />

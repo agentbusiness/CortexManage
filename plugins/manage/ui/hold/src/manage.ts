@@ -26,6 +26,58 @@ export interface Source {
   commit_name?: string;
   commit_email?: string;
   github?: string;
+  /** The GitHub connection it is reached with; empty: the sign-in of Settings > GitHub. */
+  connection?: string;
+}
+
+/** Where one value of a delivery profile was read. */
+export interface DeliveryFact {
+  field: string;
+  path: string;
+  line: number;
+  quote: string;
+}
+
+/** How a repository ships (`Delivery`). */
+export interface Delivery {
+  /** empty | learning | learned | failed */
+  state: string;
+  error: string;
+  learned_ms: number;
+  reach_main: string;
+  main_is: string;
+  release_kind: string;
+  release_steps: string[];
+  plan_step: string;
+  tag: string;
+  version_kind: string;
+  version_file: string;
+  version_key: string;
+  version_now: string;
+  checks: string[];
+  ships: string;
+  ci: string;
+  take_back: string;
+  secrets: string[];
+  secret_files: string[];
+  secrets_from: string;
+  facts: DeliveryFact[];
+  set_by_person: string[];
+}
+
+/** One thing that happened to a request (`TimelineEntry`). */
+export interface TimelineEntry {
+  repo: string;
+  repo_name: string;
+  event: string;
+  request: string;
+  title: string;
+  why: string;
+  by: string;
+  link: string;
+  versions: string[];
+  ms: number;
+  reopen: boolean;
 }
 
 /** `[minutes, tokens, lines]`. */
@@ -66,6 +118,9 @@ export interface Repo {
   policy: Policy;
   managed: boolean;
   created_ms: number;
+  delivery?: Delivery;
+  /** The person's rules for its commits and releases. */
+  rules?: string;
 }
 
 export interface Walk {
@@ -165,6 +220,9 @@ export interface BoardItem {
   together: string;
   reports: number;
   reporters: string[];
+  /** The next release waits for it. */
+  must_ship?: boolean;
+  follows?: string;
 }
 
 export interface Finding {
@@ -302,7 +360,7 @@ export const CHANGED = 'manage.changed';
 export const WATCH = 'manage.watch';
 
 /** The stages in order, as `stage::ALL` of the contract has them. */
-export const STAGES = ['arrived', 'clarifying', 'assessed', 'planned', 'validated', 'held', 'building', 'proving', 'landed', 'soaking', 'released'] as const;
+export const STAGES = ['arrived', 'clarifying', 'assessed', 'planned', 'validated', 'held', 'building', 'proving', 'ready', 'landed', 'soaking', 'released'] as const;
 
 export const STAGE_LABEL: Record<string, string> = {
   arrived: 'Arrived',
@@ -313,6 +371,7 @@ export const STAGE_LABEL: Record<string, string> = {
   held: 'Held',
   building: 'Building',
   proving: 'Proving',
+  ready: 'Ready to ship',
   landed: 'Landed',
   soaking: 'Waiting for release',
   released: 'Released',
@@ -328,6 +387,7 @@ const STAGE_SHORT: Record<string, string> = {
   held: 'Held',
   building: 'Build',
   proving: 'Prove',
+  ready: 'Ready',
   landed: 'Landed',
   soaking: 'Done',
   released: 'Released',

@@ -244,7 +244,7 @@ impl Vcs {
             methods::GITHUB_DISCONNECT => to_value(&self.github.disconnect().await?),
             methods::GITHUB_REPOS => {
                 let p: ReposParams = parse_params(params)?;
-                to_value(&self.github.repos(p.query.as_deref()).await?)
+                to_value(&self.github.repos(p.query.as_deref(), &p.connection).await?)
             }
             methods::GITHUB_REPO_CREATE => {
                 let p: RepoCreateParams = parse_params(params)?;
@@ -256,16 +256,37 @@ impl Vcs {
             }
             methods::GITHUB_PR_CREATE => {
                 let p: GithubPrParams = parse_params(params)?;
-                to_value(&self.github.pr_create(&p.repo, &p.head, &p.base, &p.title, &p.body).await?)
+                to_value(&self.github.pr_create(&p.repo, &p.head, &p.base, &p.title, &p.body, &p.connection).await?)
             }
             methods::GITHUB_PR_STATE => {
                 let p: GithubPrStateParams = parse_params(params)?;
                 to_value(&self.github.pr_state(&p.repo, p.number).await?)
             }
-            methods::GITHUB_CREDENTIAL => to_value(&self.github.credential().await?),
+            methods::GITHUB_CREDENTIAL => {
+                let connection = params.get("connection").and_then(Value::as_str).unwrap_or_default().to_owned();
+                to_value(&self.github.credential_of(&connection).await?)
+            }
+            methods::GITHUB_CONNECTIONS => to_value(&self.github.connections()),
+            methods::GITHUB_CONNECTION_ADD => {
+                let p: TokenParams = parse_params(params)?;
+                to_value(&self.github.connection_add(&p.token).await?)
+            }
+            methods::GITHUB_CONNECTION_REMOVE => {
+                let id = params.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
+                self.github.connection_remove(&id).await?;
+                Ok(serde_json::json!({"ok": true}))
+            }
+            methods::GITHUB_TREE => self.github.tree(&parse_params(params)?).await,
+            methods::GITHUB_FILE => self.github.file(&parse_params(params)?).await,
+            methods::GITHUB_RULES => self.github.rules(&parse_params(params)?).await,
+            methods::GITHUB_WORKFLOWS => self.github.workflows(&parse_params(params)?).await,
+            methods::GITHUB_RUNS => self.github.runs(&parse_params(params)?).await,
+            methods::GITHUB_PULLS => self.github.pulls(&parse_params(params)?).await,
+            methods::GITHUB_HEAD => self.github.head(&parse_params(params)?).await,
+            methods::GITHUB_TAG => self.github.tag(&parse_params(params)?).await,
             methods::CLONE => {
                 let p: CloneParams = parse_params(params)?;
-                to_value(&clone::clone(&self.github, &p.repo, p.parent.as_deref()).await?)
+                to_value(&clone::clone(&self.github, &p.repo, p.parent.as_deref(), &p.connection).await?)
             }
             methods::DEV_FOLDER_SET => {
                 let p: DevFolderParams = parse_params(params)?;
@@ -307,6 +328,17 @@ pub const PROVIDES: &[&str] = &[
     methods::GITHUB_PR_CREATE,
     methods::GITHUB_PR_STATE,
     methods::GITHUB_CREDENTIAL,
+    methods::GITHUB_CONNECTIONS,
+    methods::GITHUB_CONNECTION_ADD,
+    methods::GITHUB_CONNECTION_REMOVE,
+    methods::GITHUB_TREE,
+    methods::GITHUB_FILE,
+    methods::GITHUB_RULES,
+    methods::GITHUB_WORKFLOWS,
+    methods::GITHUB_RUNS,
+    methods::GITHUB_PULLS,
+    methods::GITHUB_HEAD,
+    methods::GITHUB_TAG,
     methods::CLONE,
     methods::DEV_FOLDER_SET,
 ];

@@ -29,6 +29,9 @@ provides = [
   "manage.board.items",
   "manage.shares",
   "manage.reports.send", "manage.reports.read", "manage.reports.request",
+  "manage.timeline.read", "manage.request.reopen",
+  "manage.delivery.learn", "manage.delivery.edit", "manage.release.waits",
+  "manage.rules.get", "manage.rules.edit",
 ]
 publishes = ["manage.changed", "manage.watch"]
 subscribes = ["plugin.state", "plugin.swapped", "train.released"]
@@ -39,9 +42,12 @@ uses = [
   "mesh.link", "mesh.peers",
   "chatflow-manage.assess", "chatflow-manage.match", "chatflow-manage.plan", "chatflow-manage.validate",
   "chatflow-manage.drift", "chatflow-manage.converge", "chatflow-manage.digest", "chatflow-manage.why",
+  "chatflow-manage.delivery", "chatflow-manage.commit", "chatflow-manage.rules",
+  "vcs.github.credential", "vcs.github.file", "vcs.github.tree", "vcs.github.rules", "vcs.github.workflows",
+  "vcs.github.pulls", "vcs.github.runs", "vcs.github.head", "vcs.github.tag",
   "charter.get", "charter.rules_for", "charter.check",
   "standard.touches", "standard.paths",
-  "train.landed", "train.get",
+  "train.landed", "train.get", "train.bump", "train.run",
   "notify.send",
 ]
 
@@ -74,6 +80,12 @@ slot = "pane.card@1"
 dir = "ui/inbox"
 id = "manage.inbox"
 slot = "workbench.band@1"
+
+# Settings > Rules: the rules every repository's commits and releases keep.
+[[ui.package]]
+dir = "ui/settings"
+id = "manage.settings"
+slot = "settings.manage@1"
 
 # The band: the Hold switch.
 [[ui.package]]

@@ -30,6 +30,10 @@ const EMBEDDED: &[(&str, &str)] = &[
     ("prompts/digest.md", include_str!("../data/prompts/digest.md")),
     ("prompts/why.md", include_str!("../data/prompts/why.md")),
     ("prompts/reply.md", include_str!("../data/prompts/reply.md")),
+    ("prompts/delivery_read.md", include_str!("../data/prompts/delivery_read.md")),
+    ("prompts/delivery.md", include_str!("../data/prompts/delivery.md")),
+    ("prompts/commit.md", include_str!("../data/prompts/commit.md")),
+    ("prompts/rules.md", include_str!("../data/prompts/rules.md")),
     ("schemas/assess.json", include_str!("../data/schemas/assess.json")),
     ("schemas/match.json", include_str!("../data/schemas/match.json")),
     ("schemas/plan.json", include_str!("../data/schemas/plan.json")),
@@ -37,10 +41,12 @@ const EMBEDDED: &[(&str, &str)] = &[
     ("schemas/drift.json", include_str!("../data/schemas/drift.json")),
     ("schemas/converge.json", include_str!("../data/schemas/converge.json")),
     ("schemas/why.json", include_str!("../data/schemas/why.json")),
+    ("schemas/delivery.json", include_str!("../data/schemas/delivery.json")),
+    ("schemas/rules.json", include_str!("../data/schemas/rules.json")),
 ];
 
 /// The stages the flow runs; each must be in `stages.toml`.
-pub const STAGES: &[&str] = &["ASSESS", "MATCH", "DISCOVER", "PLAN", "VALIDATE", "DRIFT", "CONVERGE", "DIGEST", "WHY", "REPLY"];
+pub const STAGES: &[&str] = &["ASSESS", "MATCH", "DISCOVER", "PLAN", "VALIDATE", "DRIFT", "CONVERGE", "DIGEST", "WHY", "REPLY", "DELIVERY_READ", "DELIVERY", "COMMIT", "RULES"];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,11 +69,18 @@ struct RawSampling {
     presence_penalty: f32,
 }
 
+fn delivery_tool_calls() -> u32 {
+    16
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
     /// Tool calls PLAN's discovery may make before the plan is written.
     pub plan_tool_calls: u32,
+    /// Tool calls learning how a repository ships may make.
+    #[serde(default = "delivery_tool_calls")]
+    pub delivery_tool_calls: u32,
     /// Most characters of one tool result the model is shown (head and tail).
     pub tool_result_chars: usize,
     /// Most characters of one tool result carried into the plan's own question.
@@ -119,6 +132,8 @@ const SCHEMA_NEEDS: &[(&str, &[&str])] = &[
     ("drift", &["file", "line", "reason", "does_it"]),
     ("converge", &["extra", "missing"]),
     ("why", &["why", "if_yes", "if_no"]),
+    ("delivery", &["facts"]),
+    ("rules", &["file", "quote", "rule", "reason", "breaks"]),
 ];
 
 /// One loaded, valid set.

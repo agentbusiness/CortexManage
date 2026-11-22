@@ -1,13 +1,15 @@
 /**
- * A repository's own pop-up, opened from the board: its name and git address, who its commits are
- * made as, which computer builds it, when it releases, and (under Advanced) how long work waits and
- * runs in the apps and the paths that make a change major. Nothing is saved until Save.
+ * A repository's own pop-up, opened from the board: its name and git address, the GitHub account
+ * it is reached with, who its commits are made as, which computer builds it, how it ships (learned
+ * from what it declares, each value with where it was read), when it releases, the person's rules
+ * for its commits and releases, and (under Advanced) how long work waits and a correction of how
+ * it ships. Nothing is saved until Save.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Menu, useClient, useQuery, useSlotInfo } from '@cortex/sdk';
-import { useAct, type Budget, type Policy, type Repo, type Tier } from './manage';
+import { useAct, timeOf, type Budget, type Delivery, type DeliveryFact, type Policy, type Repo, type Tier } from './manage';
 import './repo.css';
 
 /** The policy's whole numbers, with what each is called when it is wrong. */
@@ -46,7 +48,24 @@ interface Draft {
   train_day: number;
   major_paths: string;
   minor_paths: string;
+  connection: string;
+  rules: string;
+  /** How it ships, field by field as text (a list one item per line). */
+  delivery: Record<DeliveryField, string>;
 }
+
+/** The fields of how a repository ships a person can correct, as `manage.delivery.edit` takes them. */
+const DELIVERY_FIELDS = ['reach_main', 'main_is', 'release_kind', 'release_steps', 'plan_step', 'tag', 'version_kind', 'version_file', 'version_key', 'checks', 'ships', 'ci', 'secret_files', 'secrets_from'] as const;
+type DeliveryField = (typeof DELIVERY_FIELDS)[number];
+
+function deliveryText(delivery: Delivery | undefined, field: DeliveryField): string {
+  if (!delivery) return '';
+  const value = (delivery as unknown as Record<string, unknown>)[field];
+  return Array.isArray(value) ? value.join('\n') : String(value ?? '');
+}
+
+/** A GitHub connection as `vcs.github.connections` answers it. */
+interface Connection { id: string; login: string; name: string }
 
 function draftOf(repo: Repo): Draft {
   const policy = repo.policy;
@@ -71,7 +90,89 @@ function draftOf(repo: Repo): Draft {
     train_day: policy.train_day ?? 0,
     major_paths: policy.major_paths.join('\n'),
     minor_paths: policy.minor_paths.join('\n'),
+    connection: repo.source.connection ?? '',
+    rules: repo.rules ?? '',
+    delivery: Object.fromEntries(DELIVERY_FIELDS.map((field) => [field, deliveryText(repo.delivery, field)])) as Record<DeliveryField, string>,
   };
+}
+
+// ─── how it ships, in a person's words ──────────────────────────────────────
+
+const REACH: Record<string, string> = { direct: 'Committed straight to main', pr: 'By pull request', 'pr-review': 'By pull request, approved by a person on GitHub' };
+const MAIN: Record<string, string> = { ships: 'Ships when it moves', collects: 'Collects work until a release' };
+const VERSION: Record<string, string> = { 'by-script': 'Set by the release', given: 'Given by CortexManage', commit: 'The commit', none: 'None' };
+
+/** Where a value was read, for its tooltip. */
+function sourceOf(facts: DeliveryFact[], field: string): string {
+  const found = facts.filter((fact) => fact.field === field);
+  return found.map((fact) => (fact.path.startsWith('github:') ? `${fact.path} — ${fact.quote}` : `${fact.path}:${fact.line} — ${fact.quote}`)).join('\n');
+}
+
+function releaseLine(delivery: Delivery): string {
+  switch (delivery.release_kind) {
+    case 'merge':
+      return delivery.ci ? `Lands with the release; ${delivery.ci} deploys it` : 'Lands with the release; CI deploys it';
+    case 'tag':
+      return `A tag ${delivery.tag || 'v{version}'} on main`;
+    case 'steps':
+      return delivery.release_steps.join(' → ');
+    default:
+      return 'None';
+  }
+}
+
+function versionLine(delivery: Delivery): string {
+  const where = [delivery.version_file, delivery.version_key].filter(Boolean).join(' · ');
+  const base = VERSION[delivery.version_kind] ?? (delivery.version_kind || '—');
+  const now = delivery.version_now ? ` · now ${delivery.version_now}` : '';
+  return where ? `${base} (${where})${now}` : `${base}${now}`;
+}
+
+/** How the repository ships, read only: each value, with where it was read on hover. */
+function Ships({ repo, onLearn, busy, onSetUp }: { repo: Repo; onLearn: () => void; busy: boolean; onSetUp: () => void }) {
+  const d = repo.delivery;
+  const now = Date.now();
+  const learning = d?.state === 'learning';
+  const head = !repo.source.github
+    ? 'Set the GitHub repository to learn how it ships'
+    : learning
+      ? 'Reading the repository…'
+      : d?.state === 'failed'
+        ? `Could not be read: ${d.error}`
+        : d?.state === 'learned'
+          ? `Read ${timeOf(d.learned_ms, now)}`
+          : 'Not read yet';
+  const row = (label: string, field: string, value: string) => (
+    <>
+      <span className="ap">{label}</span>
+      <span className="cm-set-cell"><span className={value ? 'cm-ship-v' : 'cm-ship-v none'} title={d ? sourceOf(d.facts, field) : ''}>{value || 'Not declared'}</span></span>
+    </>
+  );
+  return (
+    <>
+      <span className="ap cm-set-h">How it ships</span>
+      <span />
+      <span className="cm-set-cell">
+        <span className={`cm-ship-state${d?.state === 'failed' ? ' bad' : ''}`}>{head}</span>
+        {repo.source.github && <button type="button" className="detent" disabled={busy || learning} onClick={onLearn}>{learning ? 'Reading…' : 'Read again'}</button>}
+      </span>
+      {d && (d.state === 'learned' || d.set_by_person.length > 0) && (
+        <>
+          {row('Reaches main', 'reach_main', REACH[d.reach_main] ?? d.reach_main)}
+          {row('Main branch', 'main_is', MAIN[d.main_is] ?? d.main_is)}
+          <span className="ap">Release</span>
+          <span className="cm-set-cell">
+            <span className={d.release_kind && d.release_kind !== 'none' ? 'cm-ship-v' : 'cm-ship-v none'} title={sourceOf(d.facts, 'release_kind')}>{releaseLine(d)}</span>
+            {(!d.release_kind || d.release_kind === 'none') && <button type="button" className="detent" disabled={busy} onClick={onSetUp}>Set up releases</button>}
+          </span>
+          {row('Version', 'version_kind', d.version_kind ? versionLine(d) : '')}
+          {row('Checks', 'checks', d.checks.join(' · '))}
+          {row('Ships', 'ships', d.ships)}
+          {d.secrets.length > 0 && row('Secrets', 'secrets', d.secrets.join(', '))}
+        </>
+      )}
+    </>
+  );
 }
 
 function whole(text: string): number | null {
@@ -145,6 +246,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
     const all = (await c.call<{ peers: Peer[] }>('mesh.peers', {}))?.peers ?? [];
     return all.filter((peer) => peer.card?.software === 'cortexcode');
   }, { topics: ['mesh.changed'] });
+  const connections = useQuery<Connection[]>('vcs.github.connections', async (c) => (await c.call<{ connections: Connection[] }>('vcs.github.connections', {}))?.connections ?? []);
   const base = draftOf(repo);
   const baseText = JSON.stringify(base);
   const [draft, setDraft] = useState<Draft>(base);
@@ -171,15 +273,22 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
     if (typeof policy === 'string') return setInvalid(policy);
     setInvalid(null);
     void act.run('save', `Saving ${repo.name}`, async () => {
-      const after = await client.call<Repo>('manage.repo.edit', {
+      let after = await client.call<Repo>('manage.repo.edit', {
         id: repo.id,
         name: draft.name.trim(),
-        source: { kind: repo.source.kind || 'git', url: draft.url.trim(), main: draft.main.trim(), changes: draft.changes, commit_name: draft.commitName.trim(), commit_email: draft.commitEmail.trim(), github: draft.github.trim() },
+        source: { kind: repo.source.kind || 'git', url: draft.url.trim(), main: draft.main.trim(), changes: draft.changes, commit_name: draft.commitName.trim(), commit_email: draft.commitEmail.trim(), github: draft.github.trim(), connection: draft.connection },
         runner: draft.runner,
         runner_name: draft.runner_name,
         policy,
         managed: draft.managed,
+        rules: draft.rules,
       });
+      // What the person corrected in how it ships: only the fields they changed.
+      const set = DELIVERY_FIELDS.filter((field) => draft.delivery[field].trim() !== base.delivery[field].trim()).map((field) => [field, draft.delivery[field]]);
+      if (set.length > 0) {
+        await client.call('manage.delivery.edit', { repo: repo.id, set });
+        after = await client.call<Repo>('manage.repo.get', { id: repo.id });
+      }
       // The form shows what was kept, which may be stricter than what was typed.
       if (after && after.id === repo.id) {
         const kept = draftOf(after);
@@ -200,7 +309,32 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
       onSelect: () => set({ runner: peer.member.node, runner_name: peer.member.name }),
     })),
   ];
-  const failed = invalid ?? act.failed('save');
+  const failed = invalid ?? act.failed('save') ?? act.failed('learn') ?? act.failed('setup');
+  const setDelivery = (field: DeliveryField, value: string) => set({ delivery: { ...draft.delivery, [field]: value } });
+  const connectionItems = (connections.data ?? []).map((connection) => ({
+    key: connection.id || 'signin',
+    label: connection.name || connection.login,
+    note: connection.id ? connection.login : 'Settings > GitHub',
+    selected: draft.connection === connection.id,
+    onSelect: () => set({ connection: connection.id }),
+  }));
+  const connectionName = (connections.data ?? []).find((connection) => connection.id === draft.connection);
+  const learn = () => void act.run('learn', 'Reading how it ships', () => client.call('manage.delivery.learn', { repo: repo.id }));
+  const setUp = () =>
+    void act.run('setup', 'Opening a request', () =>
+      client.call('manage.request.create', {
+        repo: repo.id,
+        title: 'Add a way to release this repository',
+        text: 'This repository has no release method. Add one that fits what it is and how its users get it: a release script for an app with its own updater, deploy on merge to main for a service with CI, or tagged releases for a library. The release must build on the release machine, take its version from the repository, and keep its secrets out of git.',
+      }),
+    );
+  const enumSeg = (field: DeliveryField, words: Array<[string, string]>) => (
+    <span className="seg-set" role="group" aria-label={field}>
+      {words.map(([value, label]) => (
+        <button key={value} type="button" aria-pressed={draft.delivery[field] === value} onClick={() => setDelivery(field, value)}>{label}</button>
+      ))}
+    </span>
+  );
 
   return (
     <div className="cm-set-grid" data-repo={repo.id}>
@@ -213,6 +347,10 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
       <span className="cm-set-cell"><label className="field"><input value={draft.url} aria-label="Git URL" onChange={(event) => set({ url: event.target.value })} /></label></span>
       <span className="ap">GitHub</span>
       <span className="cm-set-cell"><label className="field"><input value={draft.github} placeholder="owner/name" aria-label="GitHub repository, as owner/name" onChange={(event) => set({ github: event.target.value })} /></label></span>
+      <span className="ap">Account</span>
+      <span className="cm-set-cell">
+        <Menu label="Account" value={connectionName ? connectionName.name || connectionName.login : draft.connection || 'Settings > GitHub'} items={connectionItems} />
+      </span>
       <span className="ap">Main branch</span>
       <span className="cm-set-cell"><label className="field"><input value={draft.main} aria-label="Main branch" onChange={(event) => set({ main: event.target.value })} /></label></span>
       <span className="ap">Commits as</span>
@@ -252,6 +390,24 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
         </>
       )}
 
+      <span className="ap">Rules</span>
+      <span className="cm-set-cell">
+        <label className="field area">
+          <textarea value={draft.rules} rows={3} aria-label="Rules for commits and releases" placeholder="Rules every commit and release of this repository keeps" onChange={(event) => set({ rules: event.target.value })} />
+        </label>
+      </span>
+
+      <Ships repo={repo} busy={act.busy !== null} onLearn={learn} onSetUp={setUp} />
+      {(repo.delivery?.secret_files.length ?? 0) > 0 && (
+        <>
+          <span className="ap">Secret files</span>
+          <span className="cm-set-cell">
+            <span className="cm-ship-v">{repo.delivery!.secret_files.join(', ')}</span>
+            <label className="field"><input value={draft.delivery.secrets_from} placeholder="/path/on/the/release/machine" aria-label="Folder the secret files are taken from" onChange={(event) => setDelivery('secrets_from', event.target.value)} /></label>
+          </span>
+        </>
+      )}
+
       <span />
       <span className="cm-set-cell">
         <button type="button" className="detent" aria-pressed={advanced} aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>Advanced</button>
@@ -277,6 +433,51 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
         <Hours value={draft.numbers.hold_minor_min} label="A minor change waits" onChange={(value) => setNumber('hold_minor_min', value)} />
         <span className="cm-pol-note">until your yes</span>
       </div>
+
+      <span className="ap cm-set-h">How it ships</span>
+      <span className="ap">Reaches main</span>
+      <span className="cm-set-cell">{enumSeg('reach_main', [['direct', 'Direct'], ['pr', 'Pull request'], ['pr-review', 'Reviewed']])}</span>
+      <span className="ap">Main branch</span>
+      <span className="cm-set-cell">{enumSeg('main_is', [['collects', 'Collects'], ['ships', 'Ships']])}</span>
+      <span className="ap">Release</span>
+      <span className="cm-set-cell">{enumSeg('release_kind', [['steps', 'Commands'], ['merge', 'Merge'], ['tag', 'Tag'], ['none', 'None']])}</span>
+      {draft.delivery.release_kind === 'steps' && (
+        <>
+          <span className="ap">Commands</span>
+          <span className="cm-set-cell"><label className="field area"><textarea className="mono" rows={3} value={draft.delivery.release_steps} aria-label="Release commands, one per line" onChange={(event) => setDelivery('release_steps', event.target.value)} /></label></span>
+          <span className="ap">Plan command</span>
+          <span className="cm-set-cell"><label className="field"><input className="mono" value={draft.delivery.plan_step} aria-label="Command that shows what a release would ship" onChange={(event) => setDelivery('plan_step', event.target.value)} /></label></span>
+        </>
+      )}
+      {draft.delivery.release_kind === 'tag' && (
+        <>
+          <span className="ap">Tag</span>
+          <span className="cm-set-cell"><label className="field t"><input className="mono" value={draft.delivery.tag} placeholder="v{version}" aria-label="Tag" onChange={(event) => setDelivery('tag', event.target.value)} /></label></span>
+        </>
+      )}
+      {(draft.delivery.release_kind === 'merge' || draft.delivery.release_kind === 'tag') && (
+        <>
+          <span className="ap">CI workflow</span>
+          <span className="cm-set-cell"><label className="field"><input className="mono" value={draft.delivery.ci} aria-label="CI workflow file" onChange={(event) => setDelivery('ci', event.target.value)} /></label></span>
+        </>
+      )}
+      <span className="ap">Version</span>
+      <span className="cm-set-cell">
+        {enumSeg('version_kind', [['by-script', 'By the release'], ['given', 'Given'], ['commit', 'Commit'], ['none', 'None']])}
+      </span>
+      {draft.delivery.version_kind === 'given' && (
+        <>
+          <span />
+          <span className="cm-set-cell">
+            <label className="field"><input className="mono" value={draft.delivery.version_file} placeholder="Cargo.toml" aria-label="File the version is in" onChange={(event) => setDelivery('version_file', event.target.value)} /></label>
+            <label className="field"><input className="mono" value={draft.delivery.version_key} placeholder="workspace.package.version" aria-label="Key of the version" onChange={(event) => setDelivery('version_key', event.target.value)} /></label>
+          </span>
+        </>
+      )}
+      <span className="ap">Checks</span>
+      <span className="cm-set-cell"><label className="field area"><textarea className="mono" rows={2} value={draft.delivery.checks} aria-label="Checks before landing, one per line" onChange={(event) => setDelivery('checks', event.target.value)} /></label></span>
+      <span className="ap">Secret files</span>
+      <span className="cm-set-cell"><label className="field area"><textarea className="mono" rows={2} value={draft.delivery.secret_files} aria-label="Files a release reads that git does not hold, one per line" onChange={(event) => setDelivery('secret_files', event.target.value)} /></label></span>
         </>
       )}
 

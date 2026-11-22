@@ -36,7 +36,7 @@ pub fn package(data: &Data, package: &Package) -> Word {
         // Its hold is over and it waits for its turn on the repository's runner.
         stage::HELD if package.hold_until_ms != 0 && package.hold_until_ms <= now_ms() => Word::Queued,
         stage::HELD => Word::Held,
-        stage::LANDED | stage::SOAKING | stage::RELEASED => Word::Done,
+        stage::READY | stage::LANDED | stage::SOAKING | stage::RELEASED => Word::Done,
         _ => Word::Idle,
     }
 }
@@ -58,7 +58,7 @@ pub fn request(data: &Data, rec: &ReqRec) -> Word {
         // Assessing, planning and validating are the manager's own work.
         stage::ARRIVED | stage::ASSESSED | stage::PLANNED | stage::VALIDATED => Word::Working,
         stage::HELD => Word::Held,
-        stage::LANDED | stage::SOAKING | stage::RELEASED => Word::Done,
+        stage::READY | stage::LANDED | stage::SOAKING | stage::RELEASED => Word::Done,
         _ => Word::Idle,
     }
 }

@@ -47,7 +47,7 @@ fn fetch(url: &str, dest: &Path, token: Option<String>) -> Result<(), git2::Erro
     git2::build::RepoBuilder::new().fetch_options(options).clone(url, dest).map(|_| ())
 }
 
-pub async fn clone(github: &Github, repo: &str, parent: Option<&str>) -> Result<CloneResult, RpcError> {
+pub async fn clone(github: &Github, repo: &str, parent: Option<&str>, connection: &str) -> Result<CloneResult, RpcError> {
     let (url, name, on_github) = source(repo)?;
     let parent = match parent.map(str::trim).filter(|p| !p.is_empty()) {
         Some(parent) if Path::new(parent).is_absolute() => PathBuf::from(parent),
@@ -63,7 +63,7 @@ pub async fn clone(github: &Github, repo: &str, parent: Option<&str>) -> Result<
     }
     std::fs::create_dir_all(&parent)
         .map_err(|error| RpcError::invalid_params(format!("cannot create {}: {error}", parent.display())))?;
-    let token = if on_github { github.clone_token().await } else { None };
+    let token = if on_github { github.clone_token_of(connection).await } else { None };
     let signed_in = token.is_some();
     let created = !dest.exists();
     let target = dest.clone();

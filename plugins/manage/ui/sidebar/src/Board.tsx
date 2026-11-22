@@ -26,7 +26,20 @@ import { dropOnCard, dropOnColumn, reportLine, stateLine, tagLine, type Move } f
 import { AddRepo } from './AddRepo';
 import { RepoSheet } from './RepoSheet';
 import { FlowPage, useFlow, type Table } from './Flow';
+import { TimelinePage } from './Timeline';
+import { NextRelease, releaseLine, useTrain } from './NextRelease';
 import './flow.css';
+import './timeline.css';
+
+/** The repository's next release in one line; pressing it opens the release under it. */
+function ReleaseButton({ repo, items, now, open, onToggle }: { repo: Repo; items: BoardItem[]; now: number; open: boolean; onToggle: () => void }) {
+  const train = useTrain(repo.id);
+  return (
+    <button type="button" className={`cm-rel-line${open ? ' on' : ''}`} aria-expanded={open} onClick={onToggle}>
+      {releaseLine(repo, train.data, items, now)}
+    </button>
+  );
+}
 
 const listRepos = async (client: Client) => (await client.call<{ repos: Repo[] }>('manage.repo.list', {}))?.repos ?? [];
 
@@ -133,14 +146,16 @@ export function BoardView({ now }: { now: number }) {
   // The repository the board shows; empty: all of them.
   const [only, setOnly] = useSlotState<string>('board.repo', '');
   // What the board area shows: the board, or the Error flow or Metrics flow page.
-  const [page, setPage] = useSlotState<'board' | Table>('board.page', 'board');
+  const [page, setPage] = useSlotState<'board' | 'timeline' | Table>('board.page', 'board');
+  // The repository whose next release is open under its name.
+  const [releaseOpen, setReleaseOpen] = useState<string | null>(null);
   // The computer the flow pages show; empty: all of them.
   const [node, setNode] = useSlotState<string>('flow.node', '');
   // Metrics flow shows the model calls, or the methods the apps served.
   const [metrics, setMetrics] = useSlotState<'models' | 'calls'>('flow.metrics', 'models');
-  const table: Table | null = page === 'board' ? null : page === 'calls' ? metrics : page;
+  const table: Table | null = page === 'board' || page === 'timeline' ? null : page === 'calls' ? metrics : page;
   const flow = useFlow(table, only, node);
-  const togglePage = (next: Table) => setPage(page === next ? 'board' : next);
+  const togglePage = (next: Table | 'timeline') => setPage(page === next ? 'board' : next);
   // Where a card was dropped, until the board's next answer says where its work is.
   const [placed, setPlaced] = useState<Record<string, Column>>({});
   useEffect(() => setPlaced({}), [board.data]);
@@ -270,7 +285,7 @@ export function BoardView({ now }: { now: number }) {
             ]}
           />
         )}
-        {page !== 'board' && (
+        {table && (
           <Menu
             label="Computer"
             value={flow.computers.find((computer) => computer.node === node)?.name ?? (node || 'All computers')}
@@ -281,12 +296,16 @@ export function BoardView({ now }: { now: number }) {
           />
         )}
         {chosen && page === 'board' && <button type="button" className="detent" onClick={() => settingsOf(chosen.id)}>Settings</button>}
+        {chosen && page === 'board' && chosen.managed && (
+          <ReleaseButton repo={chosen} items={items.filter((item) => item.repo === chosen.id)} now={now} open={releaseOpen === chosen.id} onToggle={() => setReleaseOpen(releaseOpen === chosen.id ? null : chosen.id)} />
+        )}
         {said && <span className="said" role="status">{said}</span>}
         <span className="grow" />
         {managed.length > 0 && (
           <button type="button" className="detent" onClick={() => fold(setSelection, { view: 'new', repo: (chosen ?? managed[0]!).id, request: null, package: null })}>New request</button>
         )}
         <button type="button" className="detent" onClick={() => setAdding(true)}>Add repo</button>
+        <button type="button" className="detent" aria-pressed={page === 'timeline'} title={page === 'timeline' ? 'Back to the board' : 'What happened this week, and why'} onClick={() => togglePage('timeline')}>Timeline</button>
         <button type="button" className="detent" aria-pressed={page === 'errors'} title={page === 'errors' ? 'Back to the board' : 'What failed in the apps, by the minute'} onClick={() => togglePage('errors')}>Error flow</button>
         <button type="button" className="detent" aria-pressed={page === 'calls'} title={page === 'calls' ? 'Back to the board' : 'What the apps served, by the minute'} onClick={() => togglePage('calls')}>Metrics flow</button>
         <button type="button" className="detent" title="Fold the board into the sidebar (B)" onClick={() => setShared(LAYOUT_BOARD, false)}>Fold</button>
@@ -297,6 +316,10 @@ export function BoardView({ now }: { now: number }) {
       {repos.error && !repos.data && <p className="inline-error cm-board-note">{loadFailure('The repositories', repos)}</p>}
       {board.error && !board.data && <p className="inline-error cm-board-note">{loadFailure('The requests', board)}</p>}
       {table && <FlowPage table={table} flow={flow} openRequest={(request) => fold(setSelection, sessionOf(request))} onView={page === 'calls' ? setMetrics : undefined} />}
+      {page === 'timeline' && <TimelinePage repo={only} openRequest={(request, repo) => fold(setSelection, { view: 'session', repo, request, package: null })} />}
+      {page === 'board' && chosen && releaseOpen === chosen.id && (
+        <div className="cm-board-note"><NextRelease repo={chosen} items={items.filter((item) => item.repo === chosen.id)} now={now} onOpen={(item) => showDetails(setSelection, item)} /></div>
+      )}
       {page === 'board' && repos.data && list.length === 0 && <p className="cm-line">No repository yet. Add one with Add repo.</p>}
       {page === 'board' && asks.length > 0 && (
         <div className="cm-needs">
@@ -331,7 +354,9 @@ export function BoardView({ now }: { now: number }) {
                     <button type="button" title={`Show only ${repo.name}`} onClick={() => setOnly(repo.id)}>{repo.name}</button>
                     {!repo.managed && <span className="ap faint">not managed yet</span>}
                     <button type="button" className="detent" onClick={() => settingsOf(repo.id)}>Settings</button>
+                    {repo.managed && <ReleaseButton repo={repo} items={mine} now={now} open={releaseOpen === repo.id} onToggle={() => setReleaseOpen(releaseOpen === repo.id ? null : repo.id)} />}
                   </div>
+                  {releaseOpen === repo.id && <NextRelease repo={repo} items={mine} now={now} onOpen={(item) => showDetails(setSelection, item)} />}
                   <div className="cm-sw-cells">
                     {COLUMNS.map((column) => (
                       <div key={column.key} className={`cm-sw-cell${overCell === `${repo.id}|${column.key}` ? ' over' : ''}`} data-column={column.key} {...cellHandlers(column.key, repo.id)}>

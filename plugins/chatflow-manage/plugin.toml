@@ -20,6 +20,7 @@ provides = [
   "chatflow-manage.turn", "chatflow-manage.steer", "chatflow-manage.cancel", "chatflow-manage.state", "chatflow-manage.running", "chatflow-manage.attachment.put",
   "chatflow-manage.assess", "chatflow-manage.match", "chatflow-manage.plan", "chatflow-manage.validate",
   "chatflow-manage.drift", "chatflow-manage.converge", "chatflow-manage.digest", "chatflow-manage.why",
+  "chatflow-manage.delivery", "chatflow-manage.commit", "chatflow-manage.rules",
 ]
 uses = [
   "manage.request.list", "manage.request.say", "manage.discover.read", "manage.discover.search", "manage.discover.tree",

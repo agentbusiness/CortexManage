@@ -87,6 +87,10 @@ pub struct TrainView {
     pub next: Vec<PartMove>,
     pub soaking: Vec<Soak>,
     pub released: Vec<Release>,
+    /// What a person said the next train waits for and is not ready yet (the train does not
+    /// leave until it is).
+    #[serde(default)]
+    pub waits: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

@@ -4,6 +4,7 @@
 //! and handed to the release train. The plugin never edits code: a CortexCode on a runner does.
 
 pub mod board;
+pub mod delivery;
 pub mod diff;
 pub mod gates;
 pub mod graph;
@@ -14,6 +15,7 @@ pub mod link;
 pub mod packages;
 pub mod pipeline;
 pub mod policy;
+pub mod release;
 pub mod reports;
 pub mod service;
 pub mod store;
@@ -48,6 +50,13 @@ pub const PROVIDES: &[&str] = &[
     methods::RUNNER_GET,
     methods::BOARD_ITEMS,
     methods::SHARES,
+    methods::TIMELINE_READ,
+    methods::REQUEST_REOPEN,
+    methods::DELIVERY_LEARN,
+    methods::DELIVERY_EDIT,
+    methods::RELEASE_WAITS,
+    methods::RULES_GET,
+    methods::RULES_EDIT,
     cc_protocol::contracts::reports::methods::SEND,
 ];
 

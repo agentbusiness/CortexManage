@@ -24,3 +24,10 @@
 #cc .cm-pol-field .field{width:64px;}
 #cc .cm-pol-field .field input{font-family:var(--font-apparatus);font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:.04em;}
 #cc .cm-pol-note{font-family:var(--font-reading);font-size:12px;font-style:italic;color:var(--ink-3);}
+#cc .cm-set-cell .field.area{flex:1 1 100%;}
+#cc .cm-set-cell .field.area textarea{width:100%;min-height:52px;resize:vertical;font-family:var(--font-reading);font-size:13px;line-height:1.5;}
+#cc .cm-set-cell .mono,#cc .cm-set-cell textarea.mono{font-family:var(--font-mono);font-size:11.5px;}
+#cc .cm-ship-v{font-family:var(--font-reading);font-size:13px;line-height:22px;color:var(--ink);overflow-wrap:anywhere;}
+#cc .cm-ship-v.none{color:var(--ink-3);font-style:italic;}
+#cc .cm-ship-state{font-family:var(--font-reading);font-size:12.5px;font-style:italic;color:var(--ink-2);flex:1 1 200px;}
+#cc .cm-ship-state.bad{color:var(--rubric);font-style:normal;}

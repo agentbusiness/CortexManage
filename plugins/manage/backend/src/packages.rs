@@ -164,7 +164,7 @@ pub async fn place(manager: &Arc<Manager>, id: &str) {
                     return;
                 }
                 match answer.relation.trim() {
-                    "same" => {
+                    "same" if !rec.reopened => {
                         merge(manager, &member.r.id, id, answer.because.trim()).await;
                         return;
                     }
@@ -289,6 +289,10 @@ async fn join(manager: &Arc<Manager>, package_id: &str, id: &str, why: &str) {
 /// of one problem are one piece of work. True when `rec` itself was merged away (its run ends).
 /// Err when the chat flow did not answer (the request waits and is tried again).
 pub async fn merge_same(manager: &Arc<Manager>, rec: &ReqRec) -> Result<bool, ()> {
+    // A person reopened it: they want it done, whatever it resembles.
+    if rec.reopened {
+        return Ok(false);
+    }
     let early = [stage::ARRIVED, stage::CLARIFYING, stage::ASSESSED, stage::PLANNED, stage::VALIDATED, stage::HELD];
     let others: Vec<ReqRec> = manager.store.read(|data| {
         let mut found: Vec<ReqRec> = data
@@ -383,6 +387,7 @@ async fn already_done(manager: &Arc<Manager>, rec: &ReqRec, entry: &crate::ledge
     manager.settled(&format!("request:{}", rec.r.id));
     manager.entry(&rec.r.session_id, kinds::STAGE, json!({"stage": "merged", "text": line})).await;
     manager.line(&rec.r.session_id, &line).await;
+    crate::ledger::note(manager, rec, "closed", &line, "model", &entry.request);
     manager.changed("request", &rec.r.id, &rec.r.repo);
 }
 
@@ -403,6 +408,8 @@ async fn merge(manager: &Arc<Manager>, older: &str, newer: &str, because: &str) 
     manager.entry(&new_rec.r.session_id, kinds::STAGE, json!({"stage": "merged", "text": line})).await;
     manager.line(&new_rec.r.session_id, &line).await;
     manager.note(&old_rec.r.session_id, &manager.t("note_merged_in", &[("from", newer), ("title", &new_rec.r.title)])).await;
+    let why = manager.t("why_merged", &[("into", older), ("title", &old_rec.r.title), ("because", &pipeline::sentence(because))]);
+    crate::ledger::note(manager, &new_rec, "merged", &why, "model", older);
     manager.changed("request", newer, &new_rec.r.repo);
     manager.changed("request", older, &old_rec.r.repo);
 }
@@ -472,7 +479,7 @@ pub async fn end(manager: &Arc<Manager>, id: &str, reason: &str) {
     inbox::close_where(manager, "policy", "superseded", |ask| ask.ask.package == package.id);
     manager.store.update_package(id, |package| package.stage = cc_protocol::contracts::manage::ended::DECLINED.into());
     for request in &package.requests {
-        pipeline::decline(manager, request, reason).await;
+        pipeline::decline(manager, request, reason, "you").await;
     }
     manager.changed("package", id, &package.repo);
     manager.look_now();

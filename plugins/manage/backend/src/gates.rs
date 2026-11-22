@@ -12,7 +12,7 @@ use crate::service::{Manager, RUNNER_BUILD, RUNNER_CALL};
 use crate::{diff, job, pipeline, policy};
 use cc_protocol::RpcError;
 use cc_protocol::contracts::charter;
-use cc_protocol::contracts::manage::{ConvergeAnswer, ConvergeParams, Evidence, Finding, Gate, flow, kinds};
+use cc_protocol::contracts::manage::{CommitParams, ConvergeAnswer, ConvergeParams, Evidence, Finding, Gate, RulesAnswer, RulesParams, flow, kinds};
 use cc_protocol::contracts::now_ms;
 use cc_protocol::contracts::runner::{self, Facts};
 use cc_protocol::contracts::standard;
@@ -22,6 +22,8 @@ use std::time::Duration;
 
 /// How long one walk's command may take.
 const WALK_MS: u64 = 120_000;
+/// How long one of the repository's own checks may take (the runner's most for a command).
+const CHECK_MS: u64 = 60 * 60_000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Which {
@@ -172,12 +174,36 @@ pub async fn run(manager: &Arc<Manager>, package_id: &str, facts: &Facts, which:
         }
     }
 
-    // Build: the changed parts into the proving home.
-    let build = runner::BuildParams { job_id: package.job_id.clone(), attempt: package.attempt, app: app.clone(), parts: Vec::new(), soak: false };
-    let built: runner::BuildAnswer = match manager.runner(&node, runner::methods::BUILD, json!(build), RUNNER_BUILD).await {
-        Ok(built) => built,
-        Err(error) if job::away(&error) => wait_for!(runner::methods::BUILD, error),
-        Err(error) => runner::BuildAnswer { ok: false, parts: Vec::new(), tail: vec![error.message], build: String::new() },
+    // Build: the repository's own checks when its profile names them, else the changed parts
+    // into the proving home.
+    let built: runner::BuildAnswer = if !repo.delivery.checks.is_empty() {
+        let mut built = runner::BuildAnswer { ok: true, parts: Vec::new(), tail: Vec::new(), build: String::new() };
+        for check in &repo.delivery.checks {
+            let command = runner::CommandParams { job_id: package.job_id.clone(), app: app.clone(), command: check.clone(), timeout_ms: Some(CHECK_MS) };
+            match manager.runner::<runner::CommandAnswer>(&node, runner::methods::COMMAND, json!(command), Duration::from_millis(CHECK_MS + 60_000)).await {
+                Ok(answer) if answer.exit_code == 0 => built.parts.push(check.clone()),
+                Ok(answer) => {
+                    built.ok = false;
+                    built.tail = diff::tail(&answer.output, 30).lines().map(str::to_owned).collect();
+                    built.tail.insert(0, format!("$ {check}"));
+                    break;
+                }
+                Err(error) if job::away(&error) => wait_for!(runner::methods::COMMAND, error),
+                Err(error) => {
+                    built.ok = false;
+                    built.tail = vec![format!("$ {check}"), error.message];
+                    break;
+                }
+            }
+        }
+        built
+    } else {
+        let build = runner::BuildParams { job_id: package.job_id.clone(), attempt: package.attempt, app: app.clone(), parts: Vec::new(), soak: false };
+        match manager.runner(&node, runner::methods::BUILD, json!(build), RUNNER_BUILD).await {
+            Ok(built) => built,
+            Err(error) if job::away(&error) => wait_for!(runner::methods::BUILD, error),
+            Err(error) => runner::BuildAnswer { ok: false, parts: Vec::new(), tail: vec![error.message], build: String::new() },
+        }
     };
     if !built.ok {
         let tail = built.tail.join("\n");
@@ -290,5 +316,68 @@ pub async fn run(manager: &Arc<Manager>, package_id: &str, facts: &Facts, which:
         }
         record(manager, package_id, "converge", "failed", findings).await;
     }
+    if !outcome.failed.is_empty() {
+        return outcome;
+    }
+
+    // The messages its commits land with, and the person's rules over the change and them.
+    let rules = rules_of(manager, &repo);
+    let members: Vec<(String, String, String)> = manager.store.read(|data| package.requests.iter().filter_map(|id| data.requests.get(id)).map(|rec| (rec.r.id.clone(), rec.r.title.clone(), rec.r.text.clone())).collect());
+    let mut messages: Vec<String> = Vec::new();
+    for (id, title, text) in &members {
+        let params = CommitParams { title: title.clone(), text: text.clone(), diff: whole.diff.clone(), rules: rules.clone() };
+        let message = match manager.peer::<serde_json::Value>(flow::COMMIT, json!(params)).await {
+            Ok(answer) => checked_message(answer.get("message").and_then(serde_json::Value::as_str).unwrap_or_default(), title),
+            // Not available: the title is the message, as before messages were written.
+            Err(error) => {
+                tracing::info!(request = %id, error = %error.message, "no commit message was written; the title is used");
+                title.clone()
+            }
+        };
+        manager.store.update_request(id, |rec| rec.commit_message = message.clone());
+        messages.push(message);
+    }
+    if rules.trim().is_empty() {
+        return outcome;
+    }
+    let params = RulesParams { rules: rules.clone(), diff: whole.diff.clone(), messages: messages.clone() };
+    let answer: RulesAnswer = match manager.peer(flow::RULES, json!(params)).await {
+        Ok(answer) => answer,
+        Err(error) => wait_for!(flow::RULES, error),
+    };
+    // A "breaks" counts only when its words are really in what was added, or in a message.
+    let quote = answer.quote.trim();
+    let in_diff = !quote.is_empty() && diff::added(&whole.diff).iter().any(|(file, line)| (answer.file.is_empty() || answer.file == "message" || *file == answer.file) && line.contains(quote));
+    let in_message = !quote.is_empty() && messages.iter().any(|message| message.contains(quote));
+    if answer.breaks && (in_diff || in_message) {
+        let evidence = format!("{} — \"{quote}\"", if in_message && !in_diff { "message" } else { answer.file.as_str() });
+        record(manager, package_id, "rules", "failed", vec![finding(manager.t("gate_rules", &[("rule", answer.rule.trim())]), &evidence)]).await;
+        let task = if in_diff && answer.file != "message" { task_for_file(&points, &answer.file) } else { last };
+        outcome.failed.push((task, manager.t("rework_rules", &[("rule", answer.rule.trim()), ("quote", quote), ("file", &answer.file)])));
+    } else {
+        record(manager, package_id, "rules", "passed", Vec::new()).await;
+        outcome.summary.push(manager.t("proof_rules", &[]));
+    }
     outcome
+}
+
+/// The person's rules for this repository: every repository's, then its own.
+pub fn rules_of(manager: &Manager, repo: &cc_protocol::contracts::manage::Repo) -> String {
+    let global = manager.store.read(|data| data.rules.clone());
+    [global.trim(), repo.rules.trim()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join("\n\n")
+}
+
+/// A commit message as code keeps it: a first line of its own, never empty, never longer than 72
+/// characters; the title when the model gave nothing usable.
+fn checked_message(message: &str, title: &str) -> String {
+    let message = message.trim();
+    let mut lines = message.lines();
+    let first = lines.next().unwrap_or_default().trim();
+    if first.is_empty() {
+        return title.to_owned();
+    }
+    let first: String = if first.chars().count() > 72 { first.chars().take(72).collect() } else { first.to_owned() };
+    let body: Vec<&str> = lines.collect();
+    let body = body.join("\n").trim().to_owned();
+    if body.is_empty() { first } else { format!("{first}\n\n{body}") }
 }

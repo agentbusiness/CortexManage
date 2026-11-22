@@ -22,7 +22,7 @@ pub async fn items(manager: &Manager) -> Value {
     let soaking: Vec<(String, String, u64)> = manager.store.read(|data| {
         data.packages
             .values()
-            .filter(|package| package.soak_until_ms > 0 && matches!(package.stage.as_str(), stage::LANDED | stage::SOAKING))
+            .filter(|package| (package.soak_until_ms > 0 && matches!(package.stage.as_str(), stage::LANDED | stage::SOAKING)) || package.stage == stage::READY)
             .map(|package| (package.id.clone(), package.repo.clone(), package.soak_until_ms))
             .collect()
     });
@@ -68,7 +68,7 @@ fn item(data: &Data, rec: &ReqRec, release: &HashMap<String, u64>, now: u64, no_
         stage::BUILDING | stage::PROVING => column::CODING,
         stage::RELEASED => column::SHIPPED,
         _ if released => column::SHIPPED,
-        stage::LANDED | stage::SOAKING => column::DONE,
+        stage::READY | stage::LANDED | stage::SOAKING => column::DONE,
         // Still being planned: it is where the person put it, and starts or waits as they said.
         _ if rec.start_wish == "now" => column::CODING,
         _ if rec.start_wish == "wait" => column::WAITING,

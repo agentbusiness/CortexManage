@@ -1,0 +1,45 @@
+/* Timeline and Next release. The theme's grammar only: 1px hairlines, no radius, no shadow, no
+   gradient, its tokens; the rubric marks what ended. */
+
+#cc .cm-tl{flex:1;min-height:0;overflow:auto;padding:4px var(--cx-end,18px) 24px 18px;}
+#cc .cm-tl-day{padding:16px 0 4px;}
+#cc .cm-tl-day>h3{margin:0 0 6px;padding-bottom:6px;border-bottom:1px solid var(--rule);}
+#cc .cm-tl-day ul{list-style:none;margin:0;padding:0;}
+#cc .cm-tl-row{border-bottom:1px solid var(--rule);}
+#cc .cm-tl-line{width:100%;display:grid;grid-template-columns:46px 120px minmax(0,1.3fr) 104px minmax(0,2fr);gap:12px;align-items:baseline;
+  padding:8px 0;border:0;background:transparent;cursor:pointer;text-align:left;color:inherit;}
+#cc .cm-tl-line:hover{background:var(--rubric-wash);}
+#cc .cm-tl-row.open .cm-tl-line{background:transparent;}
+#cc .cm-tl-t{font-family:var(--font-apparatus);font-size:10.5px;font-variant-numeric:tabular-nums;color:var(--ink-3);}
+#cc .cm-tl-repo{font-family:var(--font-apparatus);font-size:9.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#cc .cm-tl-title{font-family:var(--font-reading);font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#cc .cm-tl-ev{font-family:var(--font-apparatus);font-size:9.5px;font-weight:650;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);}
+#cc .cm-tl-ev.end{color:var(--rubric);}
+#cc .cm-tl-why{font-family:var(--font-reading);font-size:13px;font-style:italic;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#cc .cm-tl-more{padding:2px 0 14px 178px;display:flex;flex-direction:column;gap:10px;}
+#cc .cm-tl-full{margin:0;font-family:var(--font-reading);font-size:14px;line-height:1.5;color:var(--ink);}
+#cc .cm-tl-facts{display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--font-reading);font-size:12.5px;color:var(--ink-2);}
+#cc .cm-tl-facts .ap{margin-right:6px;}
+#cc .cm-tl-acts{display:flex;gap:8px;}
+#cc .cm-tl-reopen{display:flex;align-items:flex-end;gap:8px;}
+#cc .cm-tl-reopen .field{flex:1;min-width:0;}
+#cc .cm-tl-reopen textarea{width:100%;min-height:44px;resize:vertical;font-family:var(--font-reading);font-size:13px;line-height:1.5;}
+#cc .cm-tl-said{margin:0;font-family:var(--font-apparatus);font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--counter);}
+#cc .cm-tl-empty{margin:24px 0;font-family:var(--font-reading);font-size:13.5px;font-style:italic;color:var(--ink-3);}
+#cc .cm-tl-foot{padding:16px 0;display:flex;justify-content:center;}
+
+/* a repository's next release: its line, and the list under it */
+#cc .cm-rel-line{border:0;background:transparent;padding:0;cursor:pointer;font-family:var(--font-reading);font-size:12.5px;font-style:italic;color:var(--ink-2);}
+#cc .cm-rel-line:hover,#cc .cm-rel-line.on{color:var(--rubric);}
+#cc .cm-next{border:1px solid var(--rule);padding:10px 12px 12px;margin:0 0 10px;display:flex;flex-direction:column;gap:10px;}
+#cc .cm-next-h{display:flex;align-items:baseline;gap:14px;}
+#cc .cm-next-wait{font-family:var(--font-reading);font-size:12.5px;color:var(--rubric);}
+#cc .cm-next-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;}
+#cc .cm-next-cols section{display:flex;flex-direction:column;gap:6px;min-width:0;}
+#cc .cm-next-item{display:flex;align-items:center;justify-content:space-between;gap:8px;border:0;background:transparent;padding:0;text-align:left;min-width:0;cursor:pointer;color:inherit;}
+#cc .cm-next-item .t{flex:1;min-width:0;border:0;background:transparent;padding:0;text-align:left;cursor:pointer;font-family:var(--font-reading);font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#cc .cm-next-item .t:hover{color:var(--rubric);}
+#cc .cm-next-item .s{font-family:var(--font-reading);font-size:12px;font-style:italic;color:var(--ink-3);white-space:nowrap;}
+#cc .cm-next-item.pinned .t{color:var(--rubric);}
+#cc .cm-next-none{font-family:var(--font-reading);font-size:12.5px;font-style:italic;color:var(--ink-3);}
+#cc .cm-next-part{font-family:var(--font-apparatus);font-size:10.5px;font-variant-numeric:tabular-nums;color:var(--ink-2);}

@@ -43,6 +43,7 @@ export function stateLine(item: BoardItem, now: number): string {
     case 'shipped':
       return item.released_ms ? `Released ${timeOf(item.released_ms, now)}` : 'Released';
     case 'done':
+      if (item.stage === 'ready') return item.release_ms ? `Ready · ships ${timeOf(item.release_ms, now)}` : 'Ready · ships with the next release';
       if (item.release_ms) return `Releases ${timeOf(item.release_ms, now)}`;
       return 'Waiting for the next release';
   }

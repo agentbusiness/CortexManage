@@ -22,7 +22,7 @@ provides = ["train.get", "train.landed", "train.report", "train.run", "train.ski
 publishes = ["train.changed", "train.released"]
 uses = [
   "memory.graph.put", "memory.graph.retire", "memory.graph.query",
-  "manage.repo.get", "manage.runner.release", "manage.request.create",
+  "manage.repo.get", "manage.runner.release", "manage.request.create", "manage.release.waits",
 ]
 
 [ui]

@@ -13,8 +13,8 @@ use crate::{board, graph, inbox, job, packages, pipeline, policy, words};
 use cc_protocol::contracts::frame::{self as fc, SessionCreateParams, SessionKind, SessionUpdateParams};
 use cc_protocol::contracts::lifecycle::{ProbeCheck, ProbeReport};
 use cc_protocol::contracts::manage::{
-    Changed, DecideParams, DiscoverParams, From, Package, PackageEditParams, PackageView, Policy, Repo, RepoCreateParams, RepoEditParams, Request, RequestCreateParams,
-    RequestEditParams, RequestListParams, RequestView, SayParams, Tier, ended, methods, stage, topics,
+    Changed, DecideParams, Delivery, DiscoverParams, From, Package, PackageEditParams, PackageView, Policy, ReopenParams, Repo, RepoCreateParams, RepoEditParams, Request,
+    RequestCreateParams, RequestEditParams, RequestListParams, RequestView, SayParams, Tier, TimelineParams, ended, methods, stage, topics,
 };
 use cc_protocol::contracts::memory::{GraphLayer, GraphPutParams, GraphQueryParams, GraphQueryResult, GraphRetireParams, MachineInfo, methods as memory_methods};
 use cc_protocol::contracts::reports;
@@ -602,11 +602,32 @@ impl Manager {
             methods::RUNNER_RELEASE => self.runner_release(params).await,
             methods::RUNNER_GET => self.runner_get(params).await,
             methods::BOARD_ITEMS => Ok(board::items(self).await),
+            methods::TIMELINE_READ => {
+                let params: TimelineParams = parse_params(params)?;
+                let now = now_ms();
+                let before = if params.before_ms == 0 { now } else { params.before_ms };
+                let since = if params.since_ms == 0 { before.saturating_sub(7 * 86_400_000) } else { params.since_ms };
+                Ok(json!({"entries": crate::ledger::timeline(self, since, before).await, "since_ms": since, "before_ms": before}))
+            }
+            methods::REQUEST_REOPEN => self.request_reopen(parse_params(params)?).await,
+            methods::DELIVERY_LEARN => to_value(&crate::delivery::learn(self, params.get("repo").and_then(Value::as_str).unwrap_or_default())?),
+            methods::DELIVERY_EDIT => to_value(&crate::delivery::edit(self, &parse_params(params)?)?),
+            methods::RELEASE_WAITS => {
+                let repo = params.get("repo").and_then(Value::as_str).unwrap_or_default().to_owned();
+                Ok(json!({"waits": self.release_waits(&repo)}))
+            }
+            methods::RULES_GET => Ok(json!({"rules": self.store.read(|data| data.rules.clone())})),
+            methods::RULES_EDIT => {
+                let rules = params.get("rules").and_then(Value::as_str).ok_or_else(|| RpcError::invalid_params("`rules` (text) is needed"))?.trim().to_owned();
+                self.store.set_rules(&rules);
+                self.changed("rules", "", "");
+                Ok(json!({"rules": rules}))
+            }
             other => Err(RpcError::unknown_method(other)),
         }
     }
 
-    async fn repo_create(&self, params: RepoCreateParams) -> Result<Value, RpcError> {
+    async fn repo_create(self: &Arc<Self>, params: RepoCreateParams) -> Result<Value, RpcError> {
         let name = params.name.trim().to_owned();
         if name.is_empty() {
             return Err(RpcError::invalid_params("a repository needs a name"));
@@ -671,6 +692,8 @@ impl Manager {
             policy: Policy::default(),
             managed: params.managed,
             created_ms: now_ms(),
+            delivery: Delivery::default(),
+            rules: String::new(),
         };
         let rec = RepoRec { repo: repo.clone(), project_id: String::new(), request_seq: 0 };
         self.store.put_repo(rec.clone());
@@ -682,10 +705,12 @@ impl Manager {
             self.links.ensure(self.ctx()?, &repo.runner);
         }
         self.changed("repo", &id, &id);
+        // How it ships is learned now, from what the repository declares on GitHub.
+        let repo = if repo.source.github.is_empty() { repo } else { crate::delivery::learn(self, &id).map(|delivery| Repo { delivery, ..repo.clone() }).unwrap_or(repo) };
         to_value(&repo)
     }
 
-    fn repo_edit(&self, params: RepoEditParams) -> Result<Value, RpcError> {
+    fn repo_edit(self: &Arc<Self>, params: RepoEditParams) -> Result<Value, RpcError> {
         if let Some(name) = &params.name
             && name.trim().is_empty()
         {
@@ -713,8 +738,18 @@ impl Manager {
                 if let Some(managed) = params.managed {
                     repo.managed = managed;
                 }
+                if let Some(rules) = &params.rules {
+                    repo.rules = rules.trim().to_owned();
+                }
             })
             .ok_or_else(|| RpcError::not_found(format!("no repository `{}`", params.id)))?;
+        // A repository newly named on GitHub is learned.
+        if let Some(source) = &params.source
+            && !source.github.is_empty()
+            && (rec.repo.delivery.state.is_empty() || rec.repo.delivery.state == "failed")
+        {
+            let _ = crate::delivery::learn(self, &params.id);
+        }
         if !rec.repo.runner.is_empty() && rec.repo.managed {
             self.links.ensure(self.ctx()?, &rec.repo.runner);
         }
@@ -796,7 +831,14 @@ impl Manager {
             title_auto: params.title.trim().is_empty(),
             ..ReqRec::default()
         };
+        let arrived = rec.clone();
         self.store.put_request(rec);
+        let (why, by) = match arrived.r.from.kind.as_str() {
+            "app" => (self.t("why_arrived_app", &[("from", &arrived.r.from.name)]), "app"),
+            "policy" => (self.t("why_arrived_repair", &[]), "rule"),
+            _ => (self.t("why_arrived", &[]), "you"),
+        };
+        crate::ledger::note(self, &arrived, "arrived", &why, by, "");
         let mut first = json!({"text": said});
         if !params.attachments.is_empty() {
             first["attachments"] = json!(params.attachments);
@@ -805,6 +847,64 @@ impl Manager {
         self.changed("request", &id, &repo.repo.id);
         pipeline::spawn(self, &id);
         to_value(&self.request_view_of(&id)?)
+    }
+
+    /// `manage.request.reopen`: a person wants a closed request done after all, or done again
+    /// another way. One that never landed starts again from the beginning with the new message;
+    /// one whose work is on the main branch gets a new request that follows it, because what
+    /// shipped is history.
+    async fn request_reopen(self: &Arc<Self>, params: ReopenParams) -> Result<Value, RpcError> {
+        let rec = self.request(&params.id)?;
+        let text = params.text.trim().to_owned();
+        if text.is_empty() {
+            return Err(RpcError::invalid_params(self.t("reopen_no_text", &[])));
+        }
+        let landed = rec.r.ended_as == ended::RELEASED || matches!(rec.r.stage.as_str(), stage::LANDED | stage::SOAKING | stage::RELEASED);
+        if landed {
+            let body = self.t("reopen_follow_text", &[("text", &text), ("id", &rec.r.id), ("title", &rec.r.title), ("before", rec.r.text.trim())]);
+            let create = RequestCreateParams { repo: rec.r.repo.clone(), text: body, title: String::new(), from: From { kind: "person".into(), ..From::default() }, urgent: None, attachments: Vec::new() };
+            let opened = self.open_request(create, From { kind: "person".into(), ..From::default() }, None).await?;
+            let new_id = opened.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
+            self.store.update_request(&new_id, |new| {
+                new.r.follows = rec.r.id.clone();
+                new.reopened = true;
+            });
+            self.store.graph.put(Vec::new(), vec![crate::graph::edge(("Request", &new_id), "FOLLOWS", crate::graph::at("Request", &rec.r.id))]);
+            self.note(&rec.r.session_id, &self.t("note_reopened_follow", &[("id", &new_id)])).await;
+            crate::ledger::note(self, &rec, "reopened", &self.t("why_reopened_follow", &[("id", &new_id), ("text", &text)]), "you", &new_id);
+            self.changed("request", &rec.r.id, &rec.r.repo);
+            return to_value(&self.request_view_of(&new_id)?);
+        }
+        if rec.r.ended_as.is_empty() {
+            return Err(RpcError::new(codes::CONFLICT, self.t("reopen_open", &[("id", &rec.r.id)])));
+        }
+        let ended_as = rec.r.ended_as.clone();
+        self.store.update_request(&rec.r.id, |rec| {
+            rec.r.ended_as.clear();
+            rec.r.ended_reason.clear();
+            rec.r.merged_into.clear();
+            rec.r.package.clear();
+            rec.hidden = false;
+            rec.reopened = true;
+        });
+        self.entry(&rec.r.session_id, fc::kinds::USER_MESSAGE, json!({"text": text})).await;
+        self.entry(&rec.r.session_id, cc_protocol::contracts::manage::kinds::STAGE, json!({"stage": stage::ARRIVED, "text": self.t("stage_reopened", &[])})).await;
+        crate::ledger::note(self, &rec, "reopened", &self.t("why_reopened", &[("as", &ended_as), ("text", &text)]), "you", "");
+        pipeline::again(self, &rec.r.id, &text, true);
+        self.changed("request", &rec.r.id, &rec.r.repo);
+        to_value(&self.request_view_of(&rec.r.id)?)
+    }
+
+    /// What a person said the next release of the repository waits for and is not ready yet.
+    pub fn release_waits(&self, repo: &str) -> Vec<String> {
+        self.store.read(|data| {
+            data.requests
+                .values()
+                .filter(|rec| rec.r.repo == repo && rec.r.must_ship && rec.r.ended_as.is_empty())
+                .filter(|rec| !matches!(rec.r.stage.as_str(), stage::READY | stage::LANDED | stage::SOAKING | stage::RELEASED))
+                .map(|rec| rec.r.title.clone())
+                .collect()
+        })
     }
 
     fn request_list(&self, params: RequestListParams) -> Result<Value, RpcError> {
@@ -860,6 +960,7 @@ impl Manager {
                 rec.r.ended_reason = self.t("withdrawn_reason", &[]);
             });
             self.entry(&rec.r.session_id, cc_protocol::contracts::manage::kinds::STAGE, json!({"stage": ended::WITHDRAWN, "text": self.t("stage_withdrawn", &[])})).await;
+            crate::ledger::note(self, &rec, "withdrawn", &self.t("why_withdrawn", &[]), "you", "");
             self.changed("request", &rec.r.id, &rec.r.repo);
             self.changed("inbox", "", "");
             return to_value(&self.request_view_of(&params.id)?);
@@ -899,6 +1000,12 @@ impl Manager {
             } else if !landed {
                 pipeline::again(self, &rec.r.id, &note, false);
             }
+            self.changed("request", &rec.r.id, &rec.r.repo);
+        }
+        if let Some(must) = params.must_ship {
+            self.store.update_request(&rec.r.id, |rec| rec.r.must_ship = must);
+            let key = if must { "line_must_ship" } else { "line_must_ship_off" };
+            self.line(&rec.r.session_id, &self.t(key, &[])).await;
             self.changed("request", &rec.r.id, &rec.r.repo);
         }
         if let Some(urgent) = params.urgent {
@@ -992,6 +1099,9 @@ impl Manager {
 
     async fn discover(&self, method: &str, params: DiscoverParams) -> Result<Value, RpcError> {
         let repo = self.repo(&params.repo)?.repo;
+        if params.via == "github" {
+            return self.discover_github(method, &repo, params).await;
+        }
         let node = self.runner_of(&repo).await?;
         let (method, params) = match method {
             methods::DISCOVER_READ => (runner::methods::READ, json!(runner::ReadParams { repo: repo.id.clone(), path: params.path, from: params.from, lines: params.lines })),
@@ -1001,13 +1111,61 @@ impl Manager {
         self.runner(&node, method, params, RUNNER_CALL).await
     }
 
-    async fn runner_release(&self, params: Value) -> Result<Value, RpcError> {
-        let repo = self.repo(params.get("repo").and_then(Value::as_str).unwrap_or_default())?.repo;
-        let node = self.runner_of(&repo).await?;
+    /// Discovery on the repository's main branch on GitHub, with its connection: what learning how
+    /// it ships reads before any runner holds the code.
+    async fn discover_github(&self, method: &str, repo: &Repo, params: DiscoverParams) -> Result<Value, RpcError> {
+        if repo.source.github.is_empty() {
+            return Err(RpcError::invalid_params(self.t("delivery_no_github", &[])));
+        }
+        let base = json!({"repo": repo.source.github, "connection": repo.source.connection, "branch": repo.source.main});
+        if method == methods::DISCOVER_READ {
+            let mut call = base.clone();
+            call["path"] = json!(params.path);
+            let answer: Value = self.peer("vcs.github.file", call).await?;
+            let text = answer.get("text").and_then(Value::as_str).unwrap_or_default();
+            let from = params.from.unwrap_or(1).max(1) as usize;
+            let count = params.lines.unwrap_or(400).clamp(1, 2000) as usize;
+            let lines: Vec<String> = text.lines().enumerate().skip(from - 1).take(count).map(|(at, line)| format!("{:>5}  {line}", at + 1)).collect();
+            return Ok(json!({"text": lines.join("\n")}));
+        }
+        let tree: Value = self.peer("vcs.github.tree", base).await?;
+        let paths: Vec<String> = tree.get("paths").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
+        if method == methods::DISCOVER_SEARCH {
+            // A fixed string in a file's path (GitHub reads files one by one; contents are read
+            // with `read`).
+            let under = params.under.trim_matches('/');
+            let wanted = params.text.to_lowercase();
+            let limit = params.limit.unwrap_or(20).max(1) as usize;
+            let hits: Vec<Value> = paths
+                .iter()
+                .filter(|path| under.is_empty() || path.starts_with(&format!("{under}/")))
+                .filter(|path| !wanted.is_empty() && path.to_lowercase().contains(&wanted))
+                .take(limit)
+                .map(|path| json!({"path": path}))
+                .collect();
+            return Ok(json!({"hits": hits}));
+        }
+        // The folder's own entries: its files, and each folder under it once.
+        let folder = params.path.trim_matches('/');
+        let prefix = if folder.is_empty() { String::new() } else { format!("{folder}/") };
+        let mut entries: Vec<String> = Vec::new();
+        for path in paths.iter().filter(|path| path.starts_with(&prefix)) {
+            let rest = &path[prefix.len()..];
+            let entry = match rest.split_once('/') {
+                Some((dir, _)) => format!("{prefix}{dir}/"),
+                None => path.clone(),
+            };
+            if !entries.contains(&entry) {
+                entries.push(entry);
+            }
+        }
+        Ok(json!({"entries": entries}))
+    }
+
+    async fn runner_release(self: &Arc<Self>, params: Value) -> Result<Value, RpcError> {
+        let repo = params.get("repo").and_then(Value::as_str).unwrap_or_default().to_owned();
         let plan_only = params.get("plan_only").and_then(Value::as_bool).unwrap_or(false);
-        let release = runner::ReleaseParams { repo: repo.id.clone(), url: repo.source.url.clone(), main: repo.source.main.clone(), plan_only };
-        let answer: runner::ReleaseAnswer = self.runner(&node, runner::methods::RELEASE, json!(release), RUNNER_BUILD).await?;
-        to_value(&answer)
+        crate::release::run(self, &repo, plan_only).await
     }
 
     async fn runner_get(&self, params: Value) -> Result<Value, RpcError> {

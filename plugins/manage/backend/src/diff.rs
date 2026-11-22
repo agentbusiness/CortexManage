@@ -103,3 +103,19 @@ pub fn tail(text: &str, count: usize) -> String {
     let lines: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty()).collect();
     lines[lines.len().saturating_sub(count)..].join("\n")
 }
+
+/// Every added line of a diff with its file (without the `+`).
+pub fn added(diff: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for section in sections(diff) {
+        let mut in_hunk = false;
+        for line in section.text.lines() {
+            if line.starts_with("@@") {
+                in_hunk = true;
+            } else if in_hunk && let Some(text) = line.strip_prefix('+') {
+                out.push((section.file.clone(), text.to_owned()));
+            }
+        }
+    }
+    out
+}

@@ -67,6 +67,24 @@ pub enum Msg {
     Decided {
         ask: Box<AskRec>,
     },
+    /// The release train lands this ready package now (a repository whose main branch ships);
+    /// the answer is the commit that landed, or why it did not.
+    Land {
+        reply: tokio::sync::oneshot::Sender<Result<String, String>>,
+    },
+}
+
+/// Land a package that waits for its release, and wait for the outcome.
+pub async fn land_now(manager: &Arc<Manager>, package: &str) -> Result<String, String> {
+    let (reply, outcome) = tokio::sync::oneshot::channel();
+    tell(manager, package, Msg::Land { reply });
+    outcome.await.unwrap_or_else(|_| Err(manager.t("land_task_gone", &[])))
+}
+
+/// Whether the repository's main branch ships: then a finished package waits on its branch and
+/// lands with the release.
+pub fn ships(repo: &Repo) -> bool {
+    repo.delivery.main_is == "ships" && repo.delivery.release_kind == "merge"
 }
 
 fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -342,7 +360,8 @@ async fn start(manager: &Arc<Manager>, id: &str) -> Result<(), Fail> {
     let (project_id, base, attempt) = match known {
         Some(facts) => (facts.project_id, package.base.clone(), facts.attempt.max(package.attempt) + 1),
         None => {
-            let prepare = runner::PrepareParams { job_id: job_id.clone(), repo: repo.id.clone(), url: repo.source.url.clone(), main: repo.source.main.clone(), branch: branch.clone(), base: String::new(), commit_name: repo.source.commit_name.clone(), commit_email: repo.source.commit_email.clone() };
+            let token = crate::release::token_of(manager, &repo).await;
+            let prepare = runner::PrepareParams { job_id: job_id.clone(), repo: repo.id.clone(), url: repo.source.url.clone(), main: repo.source.main.clone(), branch: branch.clone(), base: String::new(), commit_name: repo.source.commit_name.clone(), commit_email: repo.source.commit_email.clone(), token };
             let prepared: runner::Prepared = manager.runner(&node, runner::methods::PREPARE, json!(prepare), RUNNER_PREPARE).await.map_err(on_runner)?;
             (prepared.project_id, prepared.base, 1)
         }
@@ -400,13 +419,15 @@ pub async fn tell_train(manager: &Arc<Manager>, id: &str) {
     let requests: Vec<(String, String, String)> = manager.store.read(|data| {
         package.requests.iter().filter_map(|id| data.requests.get(id)).map(|rec| (rec.r.id.clone(), rec.r.title.clone(), rec.r.tier.as_str().to_owned())).collect()
     });
+    // A release's repair is not sent on a train of its own: the whole release runs again when it lands.
+    let repairs = manager.store.read(|data| package.requests.iter().any(|id| data.requests.get(id).is_some_and(|rec| rec.r.repairs_release)));
     let params = train::LandedParams {
         package: package.id.clone(),
         repo: package.repo.clone(),
         requests,
         parts: package.parts.clone(),
         tier: package.tier.as_str().into(),
-        urgent: package.urgent,
+        urgent: package.urgent && !repairs,
         commit: package.landed.clone(),
         soak_min: policy::soak_min(&repo.repo.policy, package.tier, package.urgent),
     };
@@ -422,9 +443,15 @@ pub async fn tell_train(manager: &Arc<Manager>, id: &str) {
 
 /// A train ran: its packages' requests are released, and with that they end.
 pub async fn released(manager: &Arc<Manager>, release: &train::Release) {
+    if release.state == "failed" {
+        repair_release(manager, release).await;
+        return;
+    }
     if release.state != "ran" {
         return;
     }
+    // It went out: the next failure starts the ladder from the first rung again.
+    manager.store.update_repo(&release.repo, |rec| rec.repo.delivery.failed_releases = 0);
     let moved: Vec<String> = release.parts.iter().map(|part| format!("{} {}", part.part, part.to)).collect();
     for id in &release.packages {
         let Ok(package) = manager.package(id) else { continue };
@@ -450,6 +477,65 @@ pub async fn released(manager: &Arc<Manager>, release: &train::Release) {
     manager.changed("inbox", "", &release.repo);
 }
 
+/// How many failed releases in a row are repaired by a request of their own before a person is
+/// told (the ladder: try once, try again, then a person).
+const RELEASE_REPAIRS: u32 = 2;
+
+/// A release failed: it is repaired at once, as an urgent request in the normal flow with what the
+/// release printed, and released again as soon as the repair lands. A failure while a repair is
+/// still open is added to that repair. After the repairs of the ladder, a person is told.
+async fn repair_release(manager: &Arc<Manager>, release: &train::Release) {
+    let repo = release.repo.clone();
+    let last = release.tail.last().cloned().unwrap_or_default();
+    crate::ledger::release_failed(manager, &repo, &manager.t("why_release_failed", &[("line", last.trim())]));
+    manager.changed("inbox", "", &repo);
+    let Some(rec) = manager.store.update_repo(&repo, |rec| rec.repo.delivery.failed_releases += 1) else { return };
+    let failures = rec.repo.delivery.failed_releases;
+    let output = release.tail.iter().map(|line| line.trim_end()).filter(|line| !line.is_empty()).collect::<Vec<_>>().join("\n");
+    let open = manager.store.read(|data| data.requests.values().find(|other| other.r.repo == repo && other.r.repairs_release && other.r.ended_as.is_empty() && !matches!(other.r.stage.as_str(), stage::LANDED | stage::SOAKING | stage::RELEASED)).map(|other| other.r.id.clone()));
+    if let Some(id) = open {
+        // Its repair is still being made: what failed now is added to it.
+        pipeline::again(manager, &id, &manager.t("repair_more", &[("output", &output)]), true);
+        return;
+    }
+    if failures > RELEASE_REPAIRS {
+        let title = manager.t("repair_person_title", &[("repo", &rec.repo.name)]);
+        let body = manager.t("repair_person_body", &[("count", &failures.to_string()), ("line", last.trim())]);
+        manager.notify("approval", &format!("release:{repo}"), title, body, rec.repo.name.clone()).await;
+        crate::ledger::release_note(manager, &repo, &manager.t("why_repair_person", &[("count", &failures.to_string())]));
+        return;
+    }
+    let text = manager.t("repair_text", &[("repo", &rec.repo.name), ("output", &output)]);
+    let params = cc_protocol::contracts::manage::RequestCreateParams {
+        repo: repo.clone(),
+        text,
+        title: manager.t("repair_title", &[]),
+        from: cc_protocol::contracts::manage::From { kind: "policy".into(), name: manager.t("repair_from", &[]), node: String::new() },
+        urgent: Some(true),
+        attachments: Vec::new(),
+    };
+    let from = params.from.clone();
+    match manager.open_request(params, from, None).await {
+        Ok(view) => {
+            if let Some(id) = view.get("id").and_then(Value::as_str) {
+                manager.store.update_request(id, |rec| {
+                    rec.r.repairs_release = true;
+                    // A repair is never merged into other work: it must be made.
+                    rec.reopened = true;
+                });
+            }
+        }
+        Err(error) => tracing::warn!(repo, error = %error.message, "the repair of a failed release could not be opened"),
+    }
+}
+
+/// A release's repair landed: the release runs again now, with everything that waits for it.
+async fn release_again(manager: &Arc<Manager>, repo: &str) {
+    if let Err(error) = manager.peer::<Value>(train::methods::RUN, json!({"repo": repo})).await {
+        tracing::warn!(repo, error = %error.message, "the release did not run again after its repair; it goes with the next one");
+    }
+}
+
 // ---- the package's task ------------------------------------------------------------------------
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -462,6 +548,8 @@ enum Phase {
     Pending,
     /// A person is asked.
     Waiting,
+    /// Built and proven; it waits on its branch for the release, which lands it.
+    Ready,
 }
 
 struct Actor {
@@ -500,6 +588,8 @@ struct Actor {
     blocked_ok: bool,
     /// The person said yes to landing a major package.
     landing_ok: bool,
+    /// The release train is landing it now.
+    for_train: bool,
 }
 
 impl Actor {
@@ -532,6 +622,7 @@ impl Actor {
             conflict_restarted: false,
             blocked_ok: false,
             landing_ok: false,
+            for_train: false,
         }
     }
 
@@ -575,6 +666,10 @@ impl Actor {
                 }
                 Msg::Resume => self.resume().await,
                 Msg::Decided { ask } => self.decided(&ask).await,
+                Msg::Land { reply } => {
+                    let outcome = self.land_for_train().await;
+                    let _ = reply.send(outcome);
+                }
             }
         }
         // Close the channel before the entry goes, so a message sent meanwhile starts a new task.
@@ -592,6 +687,14 @@ impl Actor {
             self.done = true;
             return;
         };
+        if package.stage == stage::READY && !package.session_id.is_empty() {
+            // It waits for the release: nothing runs until the train lands it.
+            self.points = self.m.store.read(|data| packages::joined(data, &package));
+            self.phase = Phase::Ready;
+            self.landing_ok = true;
+            self.blocked_ok = true;
+            return;
+        }
         if !matches!(package.stage.as_str(), stage::BUILDING | stage::PROVING) || package.session_id.is_empty() {
             self.done = true;
             return;
@@ -1294,7 +1397,46 @@ impl Actor {
                 self.m.note(&session, &line).await;
             }
         }
+        if let Some(repo) = self.repo(&package)
+            && ships(&repo)
+            && !self.for_train
+        {
+            self.wait_for_train().await;
+            return;
+        }
         self.land().await;
+    }
+
+    /// Main ships in this repository: the package waits, proven, on its branch, and the release
+    /// lands it with everything else that is ready.
+    async fn wait_for_train(&mut self) {
+        self.phase = Phase::Ready;
+        set_stage(&self.m, &self.id, stage::READY).await;
+        let Some(package) = self.package() else { return };
+        let why = self.m.t("why_ready", &[]);
+        for request in &package.requests {
+            if let Ok(rec) = self.m.request(request) {
+                crate::ledger::note(&self.m, &rec, "ready", &why, "rule", "");
+            }
+        }
+        tell_train(&self.m, &self.id).await;
+        self.m.look_now();
+    }
+
+    /// The train lands it now. The commit that landed, or why not (it then goes on as a landing
+    /// that failed always does: rework, or a person).
+    async fn land_for_train(&mut self) -> Result<String, String> {
+        if self.phase != Phase::Ready {
+            return Err(self.m.t("land_not_ready", &[]));
+        }
+        self.for_train = true;
+        self.land().await;
+        self.for_train = false;
+        let package = self.package().ok_or_else(|| self.m.t("land_task_gone", &[]))?;
+        if matches!(package.stage.as_str(), stage::LANDED | stage::SOAKING) && !package.landed.is_empty() {
+            return Ok(package.landed);
+        }
+        Err(self.m.t("land_not_landed", &[]))
     }
 
     /// A check failed: the failing tasks start again with what was found. When the same work
@@ -1334,11 +1476,22 @@ impl Actor {
         loop {
             let Some(package) = self.package() else { return };
             let Some(repo) = self.repo(&package) else { return };
-            let requests: Vec<(String, String)> =
-                self.m.store.read(|data| package.requests.iter().filter_map(|id| data.requests.get(id)).map(|rec| (rec.r.id.clone(), rec.r.title.clone())).collect());
+            // Each request lands with the message written for it when its checks passed (the
+            // title when none could be written).
+            let requests: Vec<(String, String)> = self.m.store.read(|data| {
+                package
+                    .requests
+                    .iter()
+                    .filter_map(|id| data.requests.get(id))
+                    .map(|rec| (rec.r.id.clone(), if rec.commit_message.trim().is_empty() { rec.r.title.clone() } else { rec.commit_message.trim().to_owned() }))
+                    .collect()
+            });
+            // A repository whose changes reach main by pull request gets one, as its profile says.
+            let changes = if repo.source.changes == "none" && matches!(repo.delivery.reach_main.as_str(), "pr" | "pr-review") { "github-pr".to_owned() } else { repo.source.changes.clone() };
+            let token = crate::release::token_of(&self.m, &repo).await;
             // `rebased_ok` is what the runner contract's text asks for on the second call; its
             // `LandParams` has no such field, so it is sent beside the ones it has.
-            let mut params = json!(runner::LandParams { job_id: package.job_id.clone(), attempt: package.attempt, requests, changes: repo.source.changes.clone() });
+            let mut params = json!(runner::LandParams { job_id: package.job_id.clone(), attempt: package.attempt, requests, changes, token });
             if rebased_ok {
                 params["rebased_ok"] = json!(true);
             }
@@ -1418,8 +1571,16 @@ impl Actor {
             }
         }
         self.m.notify("done", &self.id, self.m.t("notify_landed", &[("id", &self.id)]), self.m.t("notify_landed_body", &[("commit", commit)]), repo.name.clone()).await;
-        // No time in the person's apps first: it goes with the repository's next release.
-        tell_train(&self.m, &self.id).await;
+        // No time in the person's apps first: it goes with the repository's next release. One
+        // the train lands is already in that release.
+        if !self.for_train {
+            tell_train(&self.m, &self.id).await;
+            let repairs = self.m.store.read(|data| package.requests.iter().any(|id| data.requests.get(id).is_some_and(|rec| rec.r.repairs_release)));
+            if repairs {
+                let (manager, repo) = (self.m.clone(), package.repo.clone());
+                tokio::spawn(async move { release_again(&manager, &repo).await });
+            }
+        }
         if let Err(error) = self.call::<Value>(runner::methods::REMOVE, json!({"job_id": package.job_id}), RUNNER_CALL).await {
             tracing::warn!(package = %self.id, error = %error.message, "the runner did not remove the worktree");
         }

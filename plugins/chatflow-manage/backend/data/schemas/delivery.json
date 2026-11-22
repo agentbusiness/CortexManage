@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "enum": ["reach_main", "main_is", "release_kind", "release_steps", "plan_step", "tag", "version_kind", "version_file", "version_key", "checks", "ships", "ci", "take_back", "secrets", "secret_files"]
+          },
+          "value": { "type": "string", "maxLength": 300 },
+          "path": { "type": "string", "maxLength": 200 },
+          "line": { "type": "integer" },
+          "quote": { "type": "string", "maxLength": 200 }
+        },
+        "required": ["field", "value", "path", "line", "quote"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["facts"],
+  "additionalProperties": false
+}

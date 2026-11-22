@@ -19,6 +19,8 @@ presence_penalty = 0.0
 [limits]
 # Tool calls PLAN's discovery may make before the plan is written.
 plan_tool_calls = 12
+# Tool calls learning how a repository ships may make.
+delivery_tool_calls = 16
 # Most characters of one tool result the model is shown while it looks around (head and tail).
 tool_result_chars = 6000
 # Most characters of one tool result carried into the plan's own question (twelve of them must fit).
@@ -107,5 +109,36 @@ max_tokens = 220
 tag = "coding"
 prompts = ["why"]
 schema = "why"
+sampling = "decision"
+max_tokens = 400
+
+# How a repository ships. First a short reading loop with the read-only tools, on the repository's
+# main branch on GitHub; then one schema-bound question that writes each value with where it is.
+[stage.DELIVERY_READ]
+tag = "coding"
+prompts = ["delivery_read"]
+sampling = "decision"
+max_tokens = 400
+effort = "low"
+think_tokens = 512
+
+[stage.DELIVERY]
+tag = "coding"
+prompts = ["delivery"]
+schema = "delivery"
+sampling = "decision"
+max_tokens = 6000
+
+# A commit's message. Free writing that code then checks (a first line, at most 72 characters).
+[stage.COMMIT]
+tag = "coding"
+prompts = ["commit"]
+sampling = "decision"
+max_tokens = 300
+
+[stage.RULES]
+tag = "coding"
+prompts = ["rules"]
+schema = "rules"
 sampling = "decision"
 max_tokens = 400

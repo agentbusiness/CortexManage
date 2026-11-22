@@ -99,6 +99,7 @@ stage_validated = "Ready."
 stage_held = "Waiting."
 stage_building = "Coding."
 stage_proving = "Built. Checking that it works."
+stage_ready = "Done: built and checked. It waits on its branch and lands with the next release."
 stage_landed = "Done: it is on the main branch."
 stage_soaking = "Done: waiting for the next release."
 stage_released = "Released: {parts}."
@@ -216,3 +217,63 @@ Fields: {fields}
 Context: {scenario}
 Stack:
 {stack}"""
+
+
+# ---- the Timeline: why each thing happened, in a sentence ------------------------------------
+why_arrived = "Written by you."
+why_arrived_app = "Reported by {from}."
+why_landed = "Built, checked and put on the main branch ({commit})."
+why_released = "Shipped in {versions}."
+why_merged = "The same as {into} (\"{title}\"), so it was counted there as one more report. {because}"
+why_withdrawn = "You withdrew it."
+why_ready = "Built and checked. It waits on its branch, because in this repository the main branch ships; it lands with the next release."
+why_reopened = "You reopened it after it was {as}: \"{text}\""
+why_reopened_follow = "Its work had already landed, so you opened {id} to follow it: \"{text}\""
+why_release_failed = "The release did not go out: {line}"
+why_delivery_changed = "How this repository ships changed in {path}; it is read again."
+
+# ---- reopening ------------------------------------------------------------------------------
+reopen_no_text = "Write what should happen now, then reopen."
+reopen_open = "{id} is still open. Write in its chat instead."
+reopen_follow_text = """{text}
+
+This follows {id} ("{title}"), whose work already landed. What it asked then:
+{before}"""
+note_reopened_follow = "Reopened as {id}: its work is on the main branch, so the new request follows it."
+stage_reopened = "Reopened."
+line_must_ship = "The next release waits for this."
+line_must_ship_off = "The next release no longer waits for this."
+
+# ---- how a repository ships, and its releases -------------------------------------------------
+delivery_no_github = "Set the repository on GitHub (owner/name) first: how it ships is read from there."
+version_unknown = "The version could not be read from {file}. Set where the version is written in the repository's settings."
+release_none = "This repository has no release; landed work stays on the main branch."
+runner_no_steps = "The CortexCode on the release machine runs only scripts/release.sh. Update CortexCode to release with this repository's own steps."
+release_landed = "{package} landed ({commit})."
+release_held = "{package} did not land: {why}"
+release_tagged = "Tagged {tag} on {commit}."
+release_no_ci_repo = "No GitHub repository is set, so no CI run is watched."
+release_stopped = "The release was stopped because CortexManage closed."
+release_no_ci = "No CI run started for {commit} within ten minutes."
+land_task_gone = "the package's task ended before it landed"
+land_not_ready = "it is not waiting for a release"
+land_not_landed = "the landing did not finish; it is reworked or asks you"
+
+# ---- your rules for commits and releases ------------------------------------------------------
+gate_rules = "Breaks your rule: {rule}"
+rework_rules = "This breaks the rule \"{rule}\": \"{quote}\" in {file}. Change it so the rule holds, then finish the task."
+proof_rules = "Your rules hold for the change and its messages."
+
+# ---- a release that failed is repaired, then released again ------------------------------------
+repair_title = "Make the release work again"
+repair_from = "the release"
+repair_text = """The release of {repo} failed. Find why from its output below and fix it, so the release goes out. When the fault is in the release's own scripts or build, change them; when it is in the code being released, fix the code.
+
+What the release printed last:
+{output}"""
+repair_more = """The release failed again:
+{output}"""
+why_arrived_repair = "Opened because the release failed: it is repaired, then released again."
+repair_person_title = "The release of {repo} keeps failing"
+repair_person_body = "It failed {count} times in a row after being repaired. Last: {line}"
+why_repair_person = "The release failed {count} times in a row; you are told instead of another repair."

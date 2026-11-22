@@ -195,8 +195,20 @@ pub fn again(manager: &Arc<Manager>, id: &str, text: &str, add: bool) {
     spawn(manager, id);
 }
 
-/// End a request as declined, with the reason in its thread.
-pub async fn decline(manager: &Arc<Manager>, id: &str, reason: &str) {
+/// A reason as a sentence: its first letter a capital, a full stop at the end.
+pub fn sentence(text: &str) -> String {
+    let text = text.trim();
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else { return String::new() };
+    let mut out: String = first.to_uppercase().chain(chars).collect();
+    if !out.ends_with(['.', '!', '?']) {
+        out.push('.');
+    }
+    out
+}
+
+/// End a request as declined, with the reason in its thread and its ledger. `by`: you | model.
+pub async fn decline(manager: &Arc<Manager>, id: &str, reason: &str, by: &str) {
     manager.next_run(id);
     let Some(rec) = manager.store.update_request(id, |rec| {
         rec.r.ended_as = ended::DECLINED.into();
@@ -207,6 +219,7 @@ pub async fn decline(manager: &Arc<Manager>, id: &str, reason: &str) {
     };
     manager.entry(&rec.r.session_id, kinds::STAGE, json!({"stage": ended::DECLINED, "text": manager.t("stage_declined", &[("reason", reason)])})).await;
     manager.line(&rec.r.session_id, &manager.t("line_declined", &[("reason", reason)])).await;
+    crate::ledger::note(manager, &rec, "declined", &sentence(reason), by, "");
     manager.changed("request", id, &rec.r.repo);
 }
 
@@ -322,7 +335,7 @@ async fn plan(manager: &Arc<Manager>, rec: &ReqRec, run: u64) -> bool {
         return false;
     }
     if plan.points.is_empty() {
-        decline(manager, id, &manager.t("declined_nothing", &[])).await;
+        decline(manager, id, &manager.t("declined_nothing", &[]), "model").await;
         return false;
     }
     plan.version = manager.store.read(|data| data.plans.get(id).map(|plans| plans.len() as u32).unwrap_or(0)) + 1;
@@ -443,7 +456,7 @@ async fn validate(manager: &Arc<Manager>, rec: &ReqRec, run: u64) -> bool {
     // The request does not fit the app when most of its points do not.
     if unfit.len() * 2 > total {
         let reason = manager.t("declined_unfit", &[("reason", unfit.first().map(String::as_str).unwrap_or_default())]);
-        decline(manager, id, &reason).await;
+        decline(manager, id, &reason, "model").await;
         return false;
     }
     let asks: Vec<&Point> = plan_rec.plan.points.iter().filter(|point| point.verdict == "ask").collect();
@@ -536,7 +549,7 @@ async fn finish(manager: &Arc<Manager>, id: &str, run: u64) -> bool {
     let session = rec.r.session_id.clone();
     let kept = manager.store.read(|data| data.kept(id));
     if kept.is_empty() {
-        decline(manager, id, &manager.t("declined_nothing", &[])).await;
+        decline(manager, id, &manager.t("declined_nothing", &[]), "model").await;
         return false;
     }
     manager.settled(&format!("request:{id}"));

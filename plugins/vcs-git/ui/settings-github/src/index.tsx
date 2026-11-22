@@ -24,6 +24,57 @@ interface GithubStatus {
   error?: string | null;
 }
 interface DeviceCode { user_code: string; verification_uri: string; expires_in: number; interval: number }
+interface Connection { id: string; login: string; name: string; method: string }
+
+/** Accounts beside the sign-in: one token each, chosen per repository where it is reached. */
+function OtherAccounts() {
+  const client = useClient();
+  const list = useQuery<Connection[]>('vcs.github.connections', async (c) => (await c.call<{ connections: Connection[] }>('vcs.github.connections', {}))?.connections ?? []);
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (name: string, work: () => Promise<unknown>) => {
+    setBusy(name);
+    setError(null);
+    try {
+      await work();
+      await list.refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const others = (list.data ?? []).filter((connection) => connection.id !== '');
+  return (
+    <>
+      <h3 className="cx-settings-title">Other accounts</h3>
+      {others.length > 0 && (
+        <table className="tbl" data-connections={others.length}>
+          <tbody>
+            {others.map((connection) => (
+              <tr key={connection.id} data-connection={connection.id}>
+                <td>{connection.name || connection.login}</td>
+                <td className="ap faint">{connection.login}</td>
+                <td className="cx-gh-end">
+                  <button className="detent warn" type="button" disabled={busy !== null} onClick={() => void run(`remove:${connection.id}`, () => client.call('vcs.github.connection.remove', { id: connection.id }))}>
+                    {busy === `remove:${connection.id}` ? 'Removing…' : 'Remove'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <form className="cx-gh-row cx-gh-token" onSubmit={(event) => { event.preventDefault(); if (token.trim()) void run('add', async () => { await client.call('vcs.github.connection.add', { token: token.trim() }); setToken(''); }); }}>
+        <input type="password" value={token} placeholder="github_pat_…" aria-label="Token of another account" autoComplete="off" spellCheck={false} onChange={(event) => setToken(event.target.value)} />
+        <button className="detent" type="submit" disabled={!token.trim() || busy !== null}>{busy === 'add' ? 'Checking…' : 'Add'}</button>
+      </form>
+      <p className="hint">A repository picks its account in its settings.</p>
+      {error && <p className="inline-error" role="alert">{error}</p>}
+    </>
+  );
+}
 
 function GithubPanel() {
   const client = useClient();
@@ -175,6 +226,7 @@ function GithubPanel() {
         </>
       )}
       {error && <p className="inline-error" role="alert">{error}</p>}
+      {s && <OtherAccounts />}
       {s && (
         <>
           <h3 className="cx-settings-title">Dev folder</h3>

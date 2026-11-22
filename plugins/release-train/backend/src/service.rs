@@ -55,6 +55,8 @@ struct Plan {
 struct State {
     /// By package.
     soaks: BTreeMap<String, Kept>,
+    /// What a person said each repository's next train waits for, as last read.
+    waits: BTreeMap<String, Vec<String>>,
     /// Oldest first.
     releases: Vec<Release>,
     /// By repository.
@@ -454,7 +456,8 @@ impl Train {
             if ask_plan {
                 state.plan_asked.insert(repo.to_owned(), now);
             }
-            (TrainView { repo: repo.to_owned(), next_ms, next, soaking, released }, ask_plan)
+            let waits = state.waits.get(repo).cloned().unwrap_or_default();
+            (TrainView { repo: repo.to_owned(), next_ms, next, soaking, released, waits }, ask_plan)
         });
         if ask_plan {
             // The versions come from the runner, which may be slow: the view answers without them
@@ -479,10 +482,29 @@ impl Train {
     /// `manage.runner.release` on the repository's runner. The plan is a read and is asked again
     /// after an interruption; the release itself is never replayed.
     async fn ask_release(&self, repo: &str, plan_only: bool) -> Result<ReleaseAnswer, RpcError> {
+        Ok(self.ask_release_held(repo, plan_only).await?.0)
+    }
+
+    /// As [`Self::ask_release`], with the packages the release could not carry (they did not land
+    /// and go on their way: reworked, or a person is asked).
+    async fn ask_release_held(&self, repo: &str, plan_only: bool) -> Result<(ReleaseAnswer, Vec<String>), RpcError> {
         let host = Host::new(self.ctx()?);
         let params = json!({"repo": repo, "plan_only": plan_only});
         let answer = if plan_only { host.call(manage::RUNNER_RELEASE, params).await } else { host.effect(manage::RUNNER_RELEASE, params).await }?;
-        parse_params(answer)
+        let held: Vec<String> = answer.get("held").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
+        Ok((parse_params(answer)?, held))
+    }
+
+    /// What a person said the repository's next train waits for (`manage.release.waits`).
+    async fn waits_of(&self, repo: &str) -> Vec<String> {
+        let Ok(ctx) = self.ctx() else { return Vec::new() };
+        match ctx.call("manage.release.waits", json!({"repo": repo})).await {
+            Ok(answer) => answer.get("waits").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect(),
+            Err(error) => {
+                tracing::debug!(repo, error = %error.message, "what the train waits for could not be read; it does not wait");
+                Vec::new()
+            }
+        }
     }
 
     /// Run the repository's train now: every ready package, or only `only` (a hotfix train).
@@ -521,11 +543,19 @@ impl Train {
         }
 
         // 2. Release it.
-        let ran = match self.ask_release(repo, false).await {
-            Ok(ran) if ran.ok => ran,
-            Ok(ran) => return Ok(self.record_failed(release, "note_failed", ran.tail)),
+        let (ran, held) = match self.ask_release_held(repo, false).await {
+            Ok((ran, held)) if ran.ok => (ran, held),
+            Ok((ran, held)) => {
+                self.hold_back(&held);
+                return Ok(self.record_failed(release, "note_failed", ran.tail));
+            }
             Err(error) => return Ok(self.record_failed(release, "note_failed", vec![error.message])),
         };
+        // What could not land is not in this release: it goes on its way and soaks anew when it
+        // is ready again.
+        self.hold_back(&held);
+        let carried: Vec<Soak> = carried.into_iter().filter(|soak| !held.contains(&soak.package)).collect();
+        release.packages.retain(|package| !held.contains(package));
 
         // 3. Record it.
         let moved = if ran.parts.is_empty() { plan.parts } else { ran.parts };
@@ -544,6 +574,24 @@ impl Train {
         // The versions moved: the plan no longer says what the next train would do.
         self.with(|state| state.plans.remove(repo));
         Ok(self.record(release, &carried))
+    }
+
+    /// Packages a release could not carry leave the train's list until they are ready again.
+    fn hold_back(&self, held: &[String]) {
+        if held.is_empty() {
+            return;
+        }
+        let changed: Vec<Kept> = self.with(|state| {
+            let mut changed = Vec::new();
+            for package in held {
+                if let Some(kept) = state.soaks.get_mut(package) {
+                    kept.soak.state = soak_state::HELD_BACK.to_owned();
+                    changed.push(kept.clone());
+                }
+            }
+            changed
+        });
+        self.put_soaks(&changed);
     }
 
     /// The release note: one line per request, grouped by part.
@@ -614,7 +662,12 @@ impl Train {
         release.note = self.texts.get(note, &[]);
         release.tail = if tail.is_empty() { vec![self.texts.get("no_tail", &[])] } else { tail };
         tracing::warn!(repo = release.repo, tail = ?release.tail.last(), "the release train failed");
-        self.record_unshipped(release)
+        let release = self.record_unshipped(release);
+        // Told like a release that ran, so what failed is in the repository's Timeline.
+        if let Some(ctx) = self.ctx.get() {
+            ctx.publish(topics::RELEASED, json!(release));
+        }
+        release
     }
 
     // ---- the clock -----------------------------------------------------------------------------
@@ -674,6 +727,27 @@ impl Train {
             let at = self.train_at(&repo).await;
             // The latest moment the schedule has reached: one train for each.
             let Some((today, _)) = when::current(now, &at) else { continue };
+            // A person said this train waits for something that is not ready: it does not leave,
+            // and is looked at again at the next tick (the day is not taken).
+            let ran_today = self.with(|state| state.clocks.get(&repo).is_some_and(|clock| clock.ran_day == today));
+            if !ran_today {
+                let waits = self.waits_of(&repo).await;
+                let changed = self.with(|state| {
+                    let before = state.waits.get(&repo).cloned().unwrap_or_default();
+                    if waits.is_empty() {
+                        state.waits.remove(&repo);
+                    } else {
+                        state.waits.insert(repo.clone(), waits.clone());
+                    }
+                    before != waits
+                });
+                if changed {
+                    self.publish_changed(&repo);
+                }
+                if !waits.is_empty() {
+                    continue;
+                }
+            }
             // The day is written before anything runs: one train per day, also after a restart or
             // a failure. A package that becomes ready later in the day waits for tomorrow's train.
             let claimed = self.with(|state| {

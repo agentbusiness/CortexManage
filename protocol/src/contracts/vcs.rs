@@ -58,13 +58,41 @@ pub mod methods {
     pub const GITHUB_PR_CREATE: &str = "vcs.github.pr.create";
     /// [`super::GithubPrStateParams`] -> [`super::GithubPr`].
     pub const GITHUB_PR_STATE: &str = "vcs.github.pr.state";
-    /// `{}` -> [`super::Credential`]. For CortexCode's own plugins that push with the connection.
+    /// `{connection?}` -> [`super::Credential`]. For the app's own plugins that push with the
+    /// connection (`""` or absent: the sign-in of Settings > GitHub).
     pub const GITHUB_CREDENTIAL: &str = "vcs.github.credential";
     /// [`super::CloneParams`] -> [`super::CloneResult`]. Clone a repository into a folder (no
     /// git program needed).
     pub const CLONE: &str = "vcs.clone";
     /// [`super::DevFolderParams`] -> [`super::GithubStatus`]. The folder new clones go into.
     pub const DEV_FOLDER_SET: &str = "vcs.dev_folder.set";
+    /// `{}` -> [`super::Connections`]: the GitHub sign-in of Settings > GitHub (id `""`) and every
+    /// other connection added beside it, each a token of its own in the secret store.
+    pub const GITHUB_CONNECTIONS: &str = "vcs.github.connections";
+    /// [`super::TokenParams`] -> [`super::Connection`]: check a token with GitHub and keep it as one
+    /// more connection (its id is the account's login).
+    pub const GITHUB_CONNECTION_ADD: &str = "vcs.github.connection.add";
+    /// `{id}` -> `{ok}`: forget a connection added beside the sign-in, and its token.
+    pub const GITHUB_CONNECTION_REMOVE: &str = "vcs.github.connection.remove";
+    /// [`super::GithubReadParams`] -> `{paths, truncated}`: every file path of a branch (read-only).
+    pub const GITHUB_TREE: &str = "vcs.github.tree";
+    /// [`super::GithubReadParams`] `{path}` -> `{text}`: one file of a branch as text (read-only).
+    pub const GITHUB_FILE: &str = "vcs.github.file";
+    /// [`super::GithubReadParams`] -> `{rules: [{type, parameters}]}`: the rules GitHub applies to a
+    /// branch (rulesets and branch protection), as GitHub declares them.
+    pub const GITHUB_RULES: &str = "vcs.github.rules";
+    /// [`super::GithubReadParams`] -> `{workflows: [{name, path, state}]}`.
+    pub const GITHUB_WORKFLOWS: &str = "vcs.github.workflows";
+    /// [`super::GithubReadParams`] `{sha}` -> `{runs: [GithubRun]}`: the workflow runs of one commit.
+    pub const GITHUB_RUNS: &str = "vcs.github.runs";
+    /// [`super::GithubReadParams`] -> `{pulls: [{number, title, merged, merged_by, base}]}`: the
+    /// newest closed pull requests into the branch.
+    pub const GITHUB_PULLS: &str = "vcs.github.pulls";
+    /// [`super::GithubReadParams`] `{path: tag}` -> `{sha}`: put a tag on the branch's head (the
+    /// only write among these, for a release that is a tag).
+    pub const GITHUB_TAG: &str = "vcs.github.tag";
+    /// [`super::GithubReadParams`] -> `{sha}`: the branch's head commit.
+    pub const GITHUB_HEAD: &str = "vcs.github.head";
 }
 
 pub mod topics {
@@ -427,6 +455,59 @@ pub struct ReposParams {
     /// Filter by name (case-insensitive substring).
     #[serde(default)]
     pub query: Option<String>,
+    /// The connection to list with (`""`: the sign-in of Settings > GitHub).
+    #[serde(default)]
+    pub connection: String,
+}
+
+/// One way of signing in to GitHub.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Connection {
+    /// `""` for the sign-in of Settings > GitHub; the account's login for one added beside it.
+    pub id: String,
+    pub login: String,
+    #[serde(default)]
+    pub name: String,
+    /// device | token
+    #[serde(default)]
+    pub method: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Connections {
+    pub connections: Vec<Connection>,
+}
+
+/// A read of one repository on GitHub.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct GithubReadParams {
+    /// `owner/name`.
+    pub repo: String,
+    #[serde(default)]
+    pub connection: String,
+    /// The branch (empty: the repository's default branch).
+    #[serde(default)]
+    pub branch: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub sha: String,
+}
+
+/// One workflow run of a commit.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct GithubRun {
+    pub id: u64,
+    pub name: String,
+    /// queued | in_progress | completed | ...
+    pub status: String,
+    /// success | failure | cancelled | skipped | ... (empty until completed)
+    #[serde(default)]
+    pub conclusion: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub event: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -472,6 +553,8 @@ pub struct ForkParams {
 pub struct GithubPrParams {
     /// `owner/name` the pull request goes to.
     pub repo: String,
+    #[serde(default)]
+    pub connection: String,
     /// `user:branch`
     pub head: String,
     pub base: String,
@@ -504,6 +587,9 @@ pub struct Credential {
 pub struct CloneParams {
     /// `owner/name` (GitHub) or any https clone URL.
     pub repo: String,
+    /// The connection to clone with (`""`: the sign-in of Settings > GitHub).
+    #[serde(default)]
+    pub connection: String,
     /// The folder the clone goes into (default: the dev folder).
     #[serde(default)]
     pub parent: Option<String>,

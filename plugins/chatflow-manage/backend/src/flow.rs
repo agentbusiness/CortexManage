@@ -11,7 +11,7 @@
 use crate::data::Data;
 use cc_protocol::contracts::chatflow::{Attachment, AttachmentPutParams, FlowState, RunningResult, TurnResult, verbs};
 use cc_protocol::contracts::frame::{kinds, methods as frame_methods};
-use cc_protocol::contracts::manage::{AssessParams, ConvergeParams, DriftParams, MatchParams, PlanParams, RequestFile, SayParams, ValidateParams, flow as stage_methods, methods as manage_methods};
+use cc_protocol::contracts::manage::{AssessParams, CommitParams, ConvergeParams, DeliveryParams, DriftParams, MatchParams, PlanParams, RequestFile, RulesParams, SayParams, ValidateParams, flow as stage_methods, methods as manage_methods};
 use cc_protocol::{Ctx, PluginEnv, RpcError, codes, parse_params, to_value};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 pub const CATEGORY: &str = stage_methods::CATEGORY;
 
 /// Every verb the flow serves (its hello's `provides`).
-pub const VERBS: &[&str] = &[verbs::TURN, verbs::STEER, verbs::CANCEL, verbs::STATE, verbs::RUNNING, verbs::ATTACHMENT_PUT, "assess", "match", "plan", "validate", "drift", "converge", "digest", "why"];
+pub const VERBS: &[&str] = &[verbs::TURN, verbs::STEER, verbs::CANCEL, verbs::STATE, verbs::RUNNING, verbs::ATTACHMENT_PUT, "assess", "match", "plan", "validate", "drift", "converge", "digest", "why", "delivery", "commit", "rules"];
 
 /// Something in flight: a stage's model question, or a message on its way to the manage plugin.
 struct Run {
@@ -309,6 +309,21 @@ impl Flow {
                 let params: Facts = parse_params(params)?;
                 let running = self.begin("", "why", caller);
                 to_value(&self.why(&params.facts, &running.cancel).await?)
+            }
+            "delivery" => {
+                let params: DeliveryParams = parse_params(params)?;
+                let running = self.begin("", "delivery", caller);
+                to_value(&self.delivery(params, &running.cancel).await?)
+            }
+            "commit" => {
+                let params: CommitParams = parse_params(params)?;
+                let running = self.begin("", "commit", caller);
+                Ok(json!({"message": self.commit(params, &running.cancel).await?}))
+            }
+            "rules" => {
+                let params: RulesParams = parse_params(params)?;
+                let running = self.begin("", "rules", caller);
+                to_value(&self.rules(params, &running.cancel).await?)
             }
             other => Err(RpcError::new(codes::UNKNOWN_METHOD, self.data()?.text("not_in_flow", &[("verb", other)]))),
         }

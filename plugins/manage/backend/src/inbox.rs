@@ -209,7 +209,7 @@ async fn act(manager: &Arc<Manager>, rec: &AskRec) {
             // `first` keeps the older request, `second` the newer; the other one ends.
             let (kept, dropped) = if action == "second" { (&rec.other_request, &ask.request) } else { (&ask.request, &rec.other_request) };
             packages::take_out(manager, dropped);
-            pipeline::decline(manager, dropped, &manager.t("declined_contradiction", &[("kept", kept)])).await;
+            pipeline::decline(manager, dropped, &manager.t("declined_contradiction", &[("kept", kept)]), "you").await;
             manager.look_now();
         }
         "approve_plan" => {

@@ -20,12 +20,12 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 /// One read the discovery made: how it is named in the plan's question, and what it gave.
-struct Found {
-    call: String,
-    output: String,
+pub(crate) struct Found {
+    pub call: String,
+    pub output: String,
 }
 
-fn tools(data: &Data) -> Vec<ToolSpec> {
+pub(crate) fn tools(data: &Data) -> Vec<ToolSpec> {
     vec![
         ToolSpec {
             name: "read".into(),
@@ -68,7 +68,7 @@ fn tools(data: &Data) -> Vec<ToolSpec> {
 
 /// `text` when it fits `most` characters; else its head and tail with `cut` between them, both cut
 /// at line ends.
-fn head_tail(text: &str, most: usize, cut: impl Fn(usize) -> String) -> String {
+pub(crate) fn head_tail(text: &str, most: usize, cut: impl Fn(usize) -> String) -> String {
     if text.len() <= most {
         return text.to_owned();
     }
@@ -91,7 +91,7 @@ fn head_tail(text: &str, most: usize, cut: impl Fn(usize) -> String) -> String {
 
 /// A discovery answer as text. The contract leaves the items' fields open (`{text}`, `{hits}`,
 /// `{entries}`), so an item is read by the names such answers use and shown whole otherwise.
-fn shown(data: &Data, answer: &Value) -> String {
+pub(crate) fn shown(data: &Data, answer: &Value) -> String {
     fn word<'a>(item: &'a Value, names: &[&str]) -> Option<&'a str> {
         names.iter().find_map(|name| item.get(name).and_then(Value::as_str)).filter(|text| !text.is_empty())
     }
@@ -127,7 +127,7 @@ fn repo_path(path: &str) -> String {
 impl Flow {
     /// One read-only tool call: what it is called in the plan's question, and its answer (Err: the
     /// text the model is shown instead, ending with what to try next).
-    async fn discover(&self, data: &Data, repo: &str, call: &ToolCall) -> (String, Result<String, String>) {
+    pub(crate) async fn discover(&self, data: &Data, repo: &str, via: &str, call: &ToolCall) -> (String, Result<String, String>) {
         let name = call.name.as_str();
         let arguments = if call.arguments.trim().is_empty() { Some(json!({})) } else { serde_json::from_str::<Value>(&call.arguments).ok().filter(Value::is_object) };
         let Some(arguments) = arguments else {
@@ -135,7 +135,7 @@ impl Flow {
         };
         let text = |field: &str| arguments.get(field).and_then(Value::as_str).unwrap_or("").trim().to_owned();
         let number = |field: &str| arguments.get(field).and_then(Value::as_u64).map(|value| value.min(u64::from(u32::MAX)) as u32);
-        let mut params = DiscoverParams { repo: repo.to_owned(), ..DiscoverParams::default() };
+        let mut params = DiscoverParams { repo: repo.to_owned(), via: via.to_owned(), ..DiscoverParams::default() };
         let (method, label) = match name {
             "read" => {
                 params.path = repo_path(&text("path"));
@@ -211,7 +211,7 @@ impl Flow {
                         return Err(RpcError::cancelled());
                     }
                     left -= 1;
-                    let (label, answer) = self.discover(data, &params.repo, call).await;
+                    let (label, answer) = self.discover(data, &params.repo, "", call).await;
                     let text = match answer {
                         Ok(output) => {
                             // A read made twice is carried into the plan once.
