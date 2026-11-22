@@ -265,6 +265,8 @@ rework_rules = "This breaks the rule \"{rule}\": \"{quote}\" in {file}. Change i
 proof_rules = "Your rules hold for the change and its messages."
 
 # ---- a release that failed is repaired, then released again ------------------------------------
+release_failed_title = "The release of {repo} did not go out"
+release_failed_body = "{line} It is being repaired, and goes out when the repair is done."
 repair_title = "Make the release work again"
 repair_from = "the release"
 repair_text = """The release of {repo} failed. Find why from its output below and fix it, so the release goes out. When the fault is in the release's own scripts or build, change them; when it is in the code being released, fix the code.

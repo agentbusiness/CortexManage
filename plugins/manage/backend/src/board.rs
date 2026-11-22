@@ -26,7 +26,7 @@ pub async fn items(manager: &Manager) -> Value {
             .map(|package| (package.id.clone(), package.repo.clone(), package.soak_until_ms))
             .collect()
     });
-    let mut release: HashMap<String, u64> = HashMap::new();
+    let mut release: HashMap<String, Train> = HashMap::new();
     for (package, repo, soak_until) in soaking {
         release.insert(package, train_after(manager, &repo, soak_until.max(now)).await);
     }
@@ -41,7 +41,7 @@ pub async fn items(manager: &Manager) -> Value {
     json!({"items": items, "asks": asks})
 }
 
-fn item(data: &Data, rec: &ReqRec, release: &HashMap<String, u64>, now: u64, no_builder: &HashSet<String>) -> Option<BoardItem> {
+fn item(data: &Data, rec: &ReqRec, release: &HashMap<String, Train>, now: u64, no_builder: &HashSet<String>) -> Option<BoardItem> {
     let r = &rec.r;
     if rec.hidden {
         return None;
@@ -102,7 +102,7 @@ fn item(data: &Data, rec: &ReqRec, release: &HashMap<String, u64>, now: u64, no_
     let strip = package.and_then(|package| data.strips.get(&package.id));
     let steps = data.kept(&r.id).len() as u32;
     let soak_until_ms = package.map(|package| package.soak_until_ms).unwrap_or(0);
-    let release_ms = if released { 0 } else { release.get(&r.package).copied().unwrap_or(0) };
+    let train = if released { Train::default() } else { release.get(&r.package).cloned().unwrap_or_default() };
     Some(BoardItem {
         request: r.clone(),
         word: words::request(data, rec),
@@ -114,8 +114,10 @@ fn item(data: &Data, rec: &ReqRec, release: &HashMap<String, u64>, now: u64, no_
         checking: r.stage == stage::PROVING,
         queued: queued.to_owned(),
         soak_until_ms,
-        release_ms,
+        release_ms: train.next_ms,
         released_ms,
+        release_failed_ms: train.failed_ms,
+        release_failed: train.failed,
         together,
         reports: merged.len() as u32,
         reporters,
@@ -127,16 +129,32 @@ fn sender(rec: &ReqRec) -> String {
     if rec.r.from.kind == "app" { rec.r.from.name.clone() } else { String::new() }
 }
 
-/// The repository's first train after `after_ms`, as the release train's schedule says. 0 when
-/// the train plugin does not answer: the board then names no release time.
-async fn train_after(manager: &Manager, repo: &str, after_ms: u64) -> u64 {
+/// A repository's next train for a package, and its latest release when that failed.
+#[derive(Clone, Default)]
+struct Train {
+    next_ms: u64,
+    failed_ms: u64,
+    failed: String,
+}
+
+/// The repository's first train after `after_ms`, as the release train's schedule says, and its
+/// latest release when that failed. Nothing when the train plugin does not answer: the board then
+/// names no release time.
+async fn train_after(manager: &Manager, repo: &str, after_ms: u64) -> Train {
     match manager.peer::<TrainView>(train_methods::GET, json!({"repo": repo, "after_ms": after_ms})).await {
-        Ok(view) => view.next_ms,
+        Ok(view) => {
+            let failed = view.released.iter().max_by_key(|release| release.ms).filter(|release| release.state == "failed");
+            Train {
+                next_ms: view.next_ms,
+                failed_ms: failed.map(|release| release.ms).unwrap_or(0),
+                failed: failed.and_then(|release| release.tail.iter().rev().find(|line| !line.trim().is_empty())).map(|line| line.trim().to_owned()).unwrap_or_default(),
+            }
+        }
         Err(error) => {
             if error.code != codes::UNAVAILABLE {
                 tracing::debug!(repo, error = %error.message, "the next train was not read");
             }
-            0
+            Train::default()
         }
     }
 }

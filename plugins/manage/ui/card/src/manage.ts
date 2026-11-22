@@ -216,6 +216,9 @@ export interface BoardItem {
   soak_until_ms: number;
   release_ms: number;
   released_ms: number;
+  /** The repository's latest release failed: when, and its last line. It is being repaired. */
+  release_failed_ms?: number;
+  release_failed?: string;
   /** The package it is built in with others; empty when it is alone. */
   together: string;
   reports: number;
@@ -446,7 +449,7 @@ export const TIER_LABEL: Record<Tier, string> = { safe: 'Safe', minor: 'Minor', 
 
 // ─── the selection ──────────────────────────────────────────────────────────
 
-export type View = 'session' | 'new' | 'inbox' | 'charter' | 'releases' | 'runner';
+export type View = 'session' | 'new' | 'inbox' | 'charter' | 'releases' | 'runner' | 'schedule';
 
 /** The sidebar unfolded over the work area (the workbench's shared key). */
 export const LAYOUT_BOARD = 'layout.board';

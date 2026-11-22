@@ -836,7 +836,46 @@ impl Github {
     /// One REST call with a connection's token.
     async fn send_as(&self, connection: &str, method: Method, path: &str, body: Option<Value>) -> Result<(StatusCode, HeaderMap, Value), RpcError> {
         let token = self.token_of(connection).await?;
-        let mut request = self.http.request(method, format!("{API}{path}")).bearer_auth(token);
+        self.send_with(Some(token), method, path, body).await
+    }
+
+    /// The token for reading a repository: the connection's, or none when the repository uses the
+    /// sign-in of Settings > GitHub and nobody is signed in there. GitHub lets anyone read a
+    /// public repository.
+    async fn read_token(&self, connection: &str) -> Result<Option<String>, RpcError> {
+        match self.token_of(connection).await {
+            Ok(token) => Ok(Some(token)),
+            Err(_) if connection.is_empty() && self.settings().login.is_none() => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// One read of a repository: with its connection's token, else without one.
+    async fn api_read<T: serde::de::DeserializeOwned>(&self, connection: &str, path: &str) -> Result<T, RpcError> {
+        let (status, headers, body) = self.send_read(connection, path).await?;
+        if !status.is_success() {
+            return Err(api_error(status, &headers, &body));
+        }
+        serde_json::from_value(body).map_err(|error| RpcError::internal(format!("GitHub's answer to {path}: {error}")))
+    }
+
+    async fn send_read(&self, connection: &str, path: &str) -> Result<(StatusCode, HeaderMap, Value), RpcError> {
+        let token = self.read_token(connection).await?;
+        let signed_in = token.is_some();
+        let (status, headers, body) = self.send_with(token, Method::GET, path, None).await?;
+        if !signed_in && status == StatusCode::NOT_FOUND {
+            return Err(RpcError::not_found(
+                "GitHub shows no public repository by this name; if it is private, connect GitHub in Settings > GitHub",
+            ));
+        }
+        Ok((status, headers, body))
+    }
+
+    async fn send_with(&self, token: Option<String>, method: Method, path: &str, body: Option<Value>) -> Result<(StatusCode, HeaderMap, Value), RpcError> {
+        let mut request = self.http.request(method, format!("{API}{path}"));
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -916,7 +955,7 @@ impl Github {
             return Ok(read.branch.trim().to_owned());
         }
         let (owner, name) = split_full_name(&read.repo)?;
-        let repo: ApiRepo = self.api_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}"), None).await?;
+        let repo: ApiRepo = self.api_read(&read.connection, &format!("/repos/{owner}/{name}")).await?;
         Ok(repo.default_branch.unwrap_or_else(|| "main".into()))
     }
 
@@ -924,7 +963,7 @@ impl Github {
     pub async fn tree(&self, read: &GithubReadParams) -> Result<Value, RpcError> {
         let (owner, name) = split_full_name(&read.repo)?;
         let branch = self.branch_of(read).await?;
-        let tree: Value = self.api_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}/git/trees/{}?recursive=1", url_part(&branch)), None).await?;
+        let tree: Value = self.api_read(&read.connection, &format!("/repos/{owner}/{name}/git/trees/{}?recursive=1", url_part(&branch))).await?;
         let paths: Vec<String> = tree
             .get("tree")
             .and_then(Value::as_array)
@@ -944,16 +983,16 @@ impl Github {
             return Err(RpcError::invalid_params(format!("`{}` is not a file path in the repository", read.path)));
         }
         let branch = self.branch_of(read).await?;
-        let token = self.token_of(&read.connection).await?;
+        let token = self.read_token(&read.connection).await?;
         let encoded: Vec<String> = path.split('/').map(url_part).collect();
-        let response = self
+        let mut request = self
             .http
             .get(format!("{API}/repos/{owner}/{name}/contents/{}?ref={}", encoded.join("/"), url_part(&branch)))
-            .bearer_auth(token)
-            .header(ACCEPT, "application/vnd.github.raw+json")
-            .send()
-            .await
-            .map_err(unreachable)?;
+            .header(ACCEPT, "application/vnd.github.raw+json");
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
+        let response = request.send().await.map_err(unreachable)?;
         let status = response.status();
         let headers = response.headers().clone();
         if !status.is_success() {
@@ -970,7 +1009,7 @@ impl Github {
     pub async fn rules(&self, read: &GithubReadParams) -> Result<Value, RpcError> {
         let (owner, name) = split_full_name(&read.repo)?;
         let branch = self.branch_of(read).await?;
-        let rules: Value = self.api_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}/rules/branches/{}", url_part(&branch)), None).await.unwrap_or(json!([]));
+        let rules: Value = self.api_read(&read.connection, &format!("/repos/{owner}/{name}/rules/branches/{}", url_part(&branch))).await.unwrap_or(json!([]));
         let mut out: Vec<Value> = rules
             .as_array()
             .into_iter()
@@ -978,8 +1017,11 @@ impl Github {
             .map(|rule| json!({"type": rule.get("type").cloned().unwrap_or(Value::Null), "parameters": rule.get("parameters").cloned().unwrap_or(Value::Null)}))
             .collect();
         // Branch protection needs admin rights; without them GitHub answers 404 and it is left out.
-        let (status, _, protection) = self.send_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}/branches/{}/protection", url_part(&branch)), None).await?;
-        if status.is_success() {
+        // Branch protection is not shown to a read without a sign-in: then it is left out too.
+        let protection = self.send_read(&read.connection, &format!("/repos/{owner}/{name}/branches/{}/protection", url_part(&branch))).await;
+        if let Ok((status, _, protection)) = protection
+            && status.is_success()
+        {
             if let Some(reviews) = protection.get("required_pull_request_reviews") {
                 out.push(json!({"type": "pull_request", "parameters": {"required_approving_review_count": reviews.get("required_approving_review_count").cloned().unwrap_or(json!(0)), "from": "branch protection"}}));
             }
@@ -992,7 +1034,7 @@ impl Github {
 
     pub async fn workflows(&self, read: &GithubReadParams) -> Result<Value, RpcError> {
         let (owner, name) = split_full_name(&read.repo)?;
-        let found: Value = self.api_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}/actions/workflows?per_page=100"), None).await?;
+        let found: Value = self.api_read(&read.connection, &format!("/repos/{owner}/{name}/actions/workflows?per_page=100")).await?;
         let workflows: Vec<Value> = found
             .get("workflows")
             .and_then(Value::as_array)
@@ -1010,7 +1052,7 @@ impl Github {
         if sha.is_empty() || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(RpcError::invalid_params("a commit's sha is needed"));
         }
-        let found: Value = self.api_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}/actions/runs?head_sha={sha}&per_page=50"), None).await?;
+        let found: Value = self.api_read(&read.connection, &format!("/repos/{owner}/{name}/actions/runs?head_sha={sha}&per_page=50")).await?;
         let text = |run: &Value, key: &str| run.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
         let runs: Vec<GithubRun> = found
             .get("workflow_runs")
@@ -1033,7 +1075,7 @@ impl Github {
     pub async fn head(&self, read: &GithubReadParams) -> Result<Value, RpcError> {
         let (owner, name) = split_full_name(&read.repo)?;
         let branch = self.branch_of(read).await?;
-        let found: Value = self.api_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}/branches/{}", url_part(&branch)), None).await?;
+        let found: Value = self.api_read(&read.connection, &format!("/repos/{owner}/{name}/branches/{}", url_part(&branch))).await?;
         let sha = found.pointer("/commit/sha").and_then(Value::as_str).unwrap_or_default().to_owned();
         Ok(json!({"sha": sha, "branch": branch}))
     }
@@ -1057,7 +1099,7 @@ impl Github {
     pub async fn pulls(&self, read: &GithubReadParams) -> Result<Value, RpcError> {
         let (owner, name) = split_full_name(&read.repo)?;
         let branch = self.branch_of(read).await?;
-        let found: Value = self.api_as(&read.connection, Method::GET, &format!("/repos/{owner}/{name}/pulls?state=closed&base={}&per_page=20&sort=updated&direction=desc", url_part(&branch)), None).await?;
+        let found: Value = self.api_read(&read.connection, &format!("/repos/{owner}/{name}/pulls?state=closed&base={}&per_page=20&sort=updated&direction=desc", url_part(&branch))).await?;
         let pulls: Vec<Value> = found
             .as_array()
             .into_iter()

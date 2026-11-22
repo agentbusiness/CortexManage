@@ -311,6 +311,7 @@ impl Manager {
             manager.loaded.send_replace(true);
             inbox::settle_old(&manager).await;
             manager.go_on();
+            job::catch_up_releases(&manager).await;
             manager.clock().await;
         });
         if let Some(mut events) = lock(&self.link_events).take() {
@@ -408,6 +409,10 @@ impl Manager {
                 && let Some(category) = data.get("category").and_then(Value::as_str)
             {
                 self.retry(Some(category));
+                if category == "train" && *self.loaded.borrow() {
+                    let manager = self.clone();
+                    tokio::spawn(async move { job::catch_up_releases(&manager).await });
+                }
             }
         } else if topic == fc::topics::PLUGIN_SWAPPED {
             if let Some(category) = data.get("category").and_then(Value::as_str) {

@@ -444,7 +444,7 @@ pub async fn tell_train(manager: &Arc<Manager>, id: &str) {
 /// A train ran: its packages' requests are released, and with that they end.
 pub async fn released(manager: &Arc<Manager>, release: &train::Release) {
     if release.state == "failed" {
-        repair_release(manager, release).await;
+        repair_release(manager, release, false).await;
         return;
     }
     if release.state != "ran" {
@@ -484,13 +484,32 @@ const RELEASE_REPAIRS: u32 = 2;
 /// A release failed: it is repaired at once, as an urgent request in the normal flow with what the
 /// release printed, and released again as soon as the repair lands. A failure while a repair is
 /// still open is added to that repair. After the repairs of the ladder, a person is told.
-async fn repair_release(manager: &Arc<Manager>, release: &train::Release) {
+/// With `unhandled_only`, nothing is done when a failure of the repository is already counted
+/// (the count is checked and raised in one write).
+async fn repair_release(manager: &Arc<Manager>, release: &train::Release, unhandled_only: bool) {
     let repo = release.repo.clone();
+    let mut taken = false;
+    let Some(rec) = manager.store.update_repo(&repo, |rec| {
+        if !unhandled_only || rec.repo.delivery.failed_releases == 0 {
+            rec.repo.delivery.failed_releases += 1;
+            taken = true;
+        }
+    }) else {
+        return;
+    };
+    if !taken {
+        return;
+    }
     let last = release.tail.last().cloned().unwrap_or_default();
     crate::ledger::release_failed(manager, &repo, &manager.t("why_release_failed", &[("line", last.trim())]));
     manager.changed("inbox", "", &repo);
-    let Some(rec) = manager.store.update_repo(&repo, |rec| rec.repo.delivery.failed_releases += 1) else { return };
     let failures = rec.repo.delivery.failed_releases;
+    // Every failure is told: what failed, and that it is being repaired (the last rung tells below).
+    if failures <= RELEASE_REPAIRS {
+        let title = manager.t("release_failed_title", &[("repo", &rec.repo.name)]);
+        let body = manager.t("release_failed_body", &[("line", last.trim())]);
+        manager.notify("failed", &format!("release:{repo}"), title, body, rec.repo.name.clone()).await;
+    }
     let output = release.tail.iter().map(|line| line.trim_end()).filter(|line| !line.is_empty()).collect::<Vec<_>>().join("\n");
     let open = manager.store.read(|data| data.requests.values().find(|other| other.r.repo == repo && other.r.repairs_release && other.r.ended_as.is_empty() && !matches!(other.r.stage.as_str(), stage::LANDED | stage::SOAKING | stage::RELEASED)).map(|other| other.r.id.clone()));
     if let Some(id) = open {
@@ -526,6 +545,26 @@ async fn repair_release(manager: &Arc<Manager>, release: &train::Release) {
             }
         }
         Err(error) => tracing::warn!(repo, error = %error.message, "the repair of a failed release could not be opened"),
+    }
+}
+
+/// A failed release that was never handled (it failed while this plugin was away, or before
+/// failures were repaired): the latest release of each managed repository, when it failed and no
+/// failure of that repository is counted, is repaired now. Called after a start and whenever the
+/// train comes up.
+pub async fn catch_up_releases(manager: &Arc<Manager>) {
+    let repos: Vec<String> = manager.store.read(|data| data.repos.values().filter(|rec| rec.repo.managed && rec.repo.delivery.failed_releases == 0).map(|rec| rec.repo.id.clone()).collect());
+    for repo in repos {
+        let view = match manager.peer::<train::TrainView>(train::methods::GET, json!({"repo": repo})).await {
+            Ok(view) => view,
+            Err(error) => {
+                tracing::debug!(repo, error = %error.message, "the train's releases were not read; failed ones are looked at when it is up");
+                return;
+            }
+        };
+        if let Some(last) = view.released.iter().max_by_key(|release| release.ms).filter(|release| release.state == "failed") {
+            repair_release(manager, last, true).await;
+        }
     }
 }
 

@@ -6,9 +6,10 @@
  */
 
 import { useState } from 'react';
-import { Menu, definePlugin, useClient, useHost, useQuery, useUiPlugins } from '@cortex/sdk';
+import { Menu, definePlugin, useClient, useHost, useNow, useQuery, useUiPlugins } from '@cortex/sdk';
 import { CHANGED, loadFailure, local, sessionOf, useManageSelection, type Repo, type RequestView, type Selection, type View } from './manage';
 import { RunnerPage } from './Runner';
+import { SchedulePage } from './Schedule';
 import './manage.css';
 import './centre.css';
 import './composer.css';
@@ -99,12 +100,16 @@ function Centre() {
   const [selection, setSelection] = useManageSelection();
   const repos = useQuery<Repo[]>('manage.repo.list', async (client) => (await client.call<{ repos: Repo[] }>('manage.repo.list', {}))?.repos ?? [], { topics: [CHANGED] });
   const repo = repos.data?.find((candidate) => candidate.id === selection.repo);
+  const now = useNow(60_000, true);
   let body;
   switch (selection.view) {
     case 'session':
       body = selection.request
         ? <Hosted slot="manage.session@1" missing="The session view is missing: the chat flow part (chatflow-manage) is not installed, so a request's thread cannot be shown." />
         : <p className="cm-line">Choose a request on the board, or press New request.</p>;
+      break;
+    case 'schedule':
+      body = <SchedulePage repos={repos.data ?? []} open={setSelection} now={now} />;
       break;
     case 'new':
       body = <NewSession repos={repos.data ?? []} selection={selection} open={setSelection} />;

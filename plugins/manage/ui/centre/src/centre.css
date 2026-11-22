@@ -35,3 +35,13 @@
 #cc .cm-new .cm-composer{margin-top:0;border-top:1px solid var(--rule);padding:10px var(--cx-end,18px) 14px 18px;}
 /* the composer as CortexCode's: one box, the field, then its controls inside it */
 #cc .cm-composer .inline-error{margin:0 0 8px;}
+
+/* Every repository's next release: its name and when it leaves, then the requests going into it. */
+#cc .cm-sched-repo{margin-top:18px;}
+#cc .cm-sched-h{height:32px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--rule);}
+#cc .cm-sched-h .nm{font-family:var(--font-reading);font-size:15px;color:var(--ink);}
+#cc .cm-sched-h .grow{flex:1;}
+#cc .cm-sched-list{margin:0;padding:0;list-style:none;}
+#cc .cm-sched-list button{width:100%;display:flex;align-items:baseline;gap:12px;border:0;border-bottom:1px solid var(--rule);background:transparent;padding:8px 0;cursor:pointer;text-align:left;}
+#cc .cm-sched-list .t{flex:1;min-width:0;font-family:var(--font-reading);font-size:14px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#cc .cm-sched-list button:hover .t{color:var(--rubric);}

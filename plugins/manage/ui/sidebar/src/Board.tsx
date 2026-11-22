@@ -308,7 +308,7 @@ export function BoardView({ now }: { now: number }) {
         <button type="button" className="detent" aria-pressed={page === 'timeline'} title={page === 'timeline' ? 'Back to the board' : 'What happened this week, and why'} onClick={() => togglePage('timeline')}>Timeline</button>
         <button type="button" className="detent" aria-pressed={page === 'errors'} title={page === 'errors' ? 'Back to the board' : 'What failed in the apps, by the minute'} onClick={() => togglePage('errors')}>Error flow</button>
         <button type="button" className="detent" aria-pressed={page === 'calls'} title={page === 'calls' ? 'Back to the board' : 'What the apps served, by the minute'} onClick={() => togglePage('calls')}>Metrics flow</button>
-        <button type="button" className="detent" title="Fold the board into the sidebar (B)" onClick={() => setShared(LAYOUT_BOARD, false)}>Fold</button>
+        <button type="button" className="detent" title="Fold the board into the sidebar (B)" onClick={() => fold(setSelection, { view: 'schedule', repo: null, request: null, package: null })}>Fold</button>
       </div>
       {editingRepo && <RepoSheet repo={editingRepo} onClose={() => { setEditing(null); void repos.refresh(); }} />}
       {adding && <AddRepo onClose={() => setAdding(false)} onAdded={(next) => { setAdding(false); fold(setSelection, next); }} />}

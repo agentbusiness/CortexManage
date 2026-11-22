@@ -58,6 +58,7 @@ function nowLine(request: RequestView, item: BoardItem | undefined, pack: Packag
       if (item.checking) return <b>Checking that it works.</b>;
       return <><b>Step {Math.max(1, item.step)} of {item.steps || '?'}</b>{pack?.runner_name ? ` on ${pack.runner_name}.` : '.'}</>;
     case 'done':
+      if (item.release_failed_ms) return <><b>Done.</b> The release failed; it is being repaired.</>;
       return item.release_ms ? <><b>Done.</b> Releases {timeOf(item.release_ms, now)}.</> : <><b>Done.</b> Waiting for the next release.</>;
     case 'shipped':
       return <><b>Shipped</b>{request.ended_reason ? ` in ${request.ended_reason}` : ''}{item.released_ms ? `, ${timeOf(item.released_ms, now)}` : ''}.</>;
@@ -152,7 +153,11 @@ function Moment({ k, request, item, pack, items, now }: { k: Key; request: Reque
     case 'done':
       return (
         <>
-          <p>On the main branch. <b>{item?.release_ms ? `Goes out with the next release, ${timeOf(item.release_ms, now)}.` : 'Goes out with the next release.'}</b></p>
+          {item?.release_failed_ms ? (
+            <p>On the main branch. <b>The release {timeOf(item.release_failed_ms, now)} failed{item.release_failed ? `: ${item.release_failed}` : '.'}</b> It is being repaired; this goes out as soon as the repair is done{item.release_ms ? `, or at the latest with the release ${timeOf(item.release_ms, now)}` : ''}.</p>
+          ) : (
+            <p>On the main branch. <b>{item?.release_ms ? `Goes out with the next release, ${timeOf(item.release_ms, now)}.` : 'Goes out with the next release.'}</b></p>
+          )}
           {item && item.reports > 0 && <p>{item.reports + 1} reports close with it{item.reporters.length ? `: ${item.reporters.join(', ')}` : ''}.</p>}
         </>
       );

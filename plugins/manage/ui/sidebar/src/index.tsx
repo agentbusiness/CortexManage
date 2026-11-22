@@ -3,8 +3,8 @@
  *
  * Unfolded (the home screen) it is the board over the whole work area. Folded it is the sidebar
  * beside the conversation: each repository with its requests, in the board's order (Incoming,
- * Waiting, Coding, Done), each saying where its work is. B, Fold and Open chat fold it; Board
- * unfolds it.
+ * Waiting, Coding, Done), each saying where its work is. B and Fold fold it and show every repository's next release; Open chat folds it on a
+ * conversation; Board unfolds it.
  */
 
 import { useEffect, useState } from 'react';
@@ -16,6 +16,9 @@ import { AddRepo } from './AddRepo';
 import './manage.css';
 import './sidebar.css';
 import './board.css';
+
+/** Fold shows every repository's next release. */
+const SCHEDULE: Selection = { view: 'schedule', repo: null, request: null, package: null };
 
 /** The board is the home screen: the window opens on it once per start. */
 let homed = false;
@@ -64,6 +67,7 @@ function Folded({ now }: { now: number }) {
     <div className="cm-side" data-build={__CORTEX_BUILD__}>
       <div className="cm-side-acts">
         <button type="button" className="detent" title="Open the board over the whole window (B)" onClick={() => setShared(LAYOUT_BOARD, true)}>Board</button>
+        <button type="button" className="detent" aria-pressed={selection.view === 'schedule'} onClick={() => setSelection(SCHEDULE)}>Releases</button>
         <button type="button" className="detent" aria-pressed={selection.view === 'new'}
           onClick={() => setSelection({ view: 'new', repo: selection.repo ?? list.find((repo) => repo.managed)?.id ?? null, request: null, package: null })}>New request</button>
         <button type="button" className="detent" aria-pressed={adding} onClick={() => setAdding(!adding)}>Add repo</button>
@@ -83,6 +87,7 @@ function Folded({ now }: { now: number }) {
 
 function Sidebar() {
   const [unfolded, setUnfolded] = useShared<boolean>(LAYOUT_BOARD, false);
+  const [, setSelection] = useManageSelection();
   // Times on the cards turn from a clock into a day at midnight.
   const now = useNow(60_000, true);
   useEffect(() => {
@@ -99,11 +104,12 @@ function Sidebar() {
       const target = event.target as HTMLElement | null;
       if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
       event.preventDefault();
-      setUnfolded((current) => !current);
+      if (unfolded) setSelection(SCHEDULE);
+      setUnfolded(!unfolded);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setUnfolded]);
+  }, [unfolded, setUnfolded, setSelection]);
   return unfolded ? <BoardView now={now} /> : <Folded now={now} />;
 }
 

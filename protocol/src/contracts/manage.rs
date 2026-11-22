@@ -683,6 +683,12 @@ pub struct BoardItem {
     /// When it was released (done).
     #[serde(default)]
     pub released_ms: u64,
+    /// The repository's latest release failed (done): when, and its last line. It is being
+    /// repaired; this goes out when the repair is done or with the next release.
+    #[serde(default)]
+    pub release_failed_ms: u64,
+    #[serde(default)]
+    pub release_failed: String,
     /// The package it is built in when that holds more than this request: they build together.
     #[serde(default)]
     pub together: String,
