@@ -209,7 +209,7 @@ function filterRows(rows: Row[], filters: Filters): Row[] {
   return rows.filter((row) => Object.entries(filters).every(([field, value]) => value == null || str(row[field]) === value));
 }
 
-function facetValues(rows: Row[], field: string, table: Table, weigh: (row: Row) => number = (row) => row.count): Array<{ value: string; count: number }> {
+function facetValues(rows: Row[], field: string, table: Table, weigh: (row: Row) => number = (row) => num(row.count) || 1): Array<{ value: string; count: number }> {
   const sums = new Map<string, number>();
   for (const row of rows) {
     const value = str(row[field]);
@@ -379,9 +379,11 @@ function Timeline({ table, rows, span, compact, onKind }: { table: Table; rows: 
       const index = Math.floor((row.first_at_ms - from) / width);
       const slice = out[index];
       if (!slice) continue;
-      slice.total += row.count;
+      // A model call kept before calls were summed has no count: it is one call.
+      const n = num(row.count) || 1;
+      slice.total += n;
       const kind = str(row[field]);
-      slice.byKind.set(kind, (slice.byKind.get(kind) ?? 0) + row.count);
+      slice.byKind.set(kind, (slice.byKind.get(kind) ?? 0) + n);
     }
     return out;
   }, [rows, from, to, count, field]);
