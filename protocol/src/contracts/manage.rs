@@ -59,6 +59,13 @@ pub mod methods {
     /// last seven days) with the column it is in and the facts of its one line, and the decisions
     /// that wait on a person.
     pub const BOARD_ITEMS: &str = "manage.board.items";
+    /// `{table, repo?, node?, from?, to?}` -> `{today, keep_days, days, computers, rows}`: the
+    /// reports apps sent (`errors` or `calls`) for the Error flow and Metrics flow pages: every
+    /// kept day with its total, the computers that sent, and every row of the days from..to.
+    pub const REPORTS_READ: &str = "manage.reports.read";
+    /// `{repo, fingerprint}` -> `RequestView`: a person asks for a reported failure to be repaired;
+    /// its request is opened as a report opens one, or the open one is answered.
+    pub const REPORTS_REQUEST: &str = "manage.reports.request";
     /// The shared service declaration (`<category>.shares`).
     pub const SHARES: &str = "manage.shares";
 }

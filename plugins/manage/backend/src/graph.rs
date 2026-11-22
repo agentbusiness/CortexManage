@@ -161,6 +161,29 @@ impl Graph {
             .collect())
     }
 
+    /// The names of the streams that start with `prefix`.
+    pub async fn topics(&self, prefix: &str) -> Result<Vec<String>, RpcError> {
+        let result: StreamTopicsResult = read(&self.caller()?, methods::STREAM_TOPICS, json!(StreamTopicsParams { prefix: prefix.into() })).await?;
+        Ok(result.topics.into_iter().map(|topic| topic.name).collect())
+    }
+
+    /// Every record of a stream appended at or after `since_ms`, oldest first.
+    pub async fn since(&self, topic: &str, since_ms: u64) -> Result<Vec<StreamEntry>, RpcError> {
+        let caller = self.caller()?;
+        let mut out = Vec::new();
+        let mut from_offset = None;
+        loop {
+            let params = StreamReadParams { topic: topic.into(), from_offset, since_ms: Some(since_ms), limit: Some(5000) };
+            let result: StreamReadResult = read(&caller, methods::STREAM_READ, json!(params)).await?;
+            let empty = result.records.is_empty();
+            out.extend(result.records);
+            if result.end || empty || from_offset == Some(result.next_offset) {
+                return Ok(out);
+            }
+            from_offset = Some(result.next_offset);
+        }
+    }
+
     /// The newest `count` records of a stream, oldest first (none when it has none yet).
     pub async fn newest(&self, topic: &str, count: u64) -> Result<Vec<StreamEntry>, RpcError> {
         let caller = self.caller()?;

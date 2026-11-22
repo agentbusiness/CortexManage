@@ -1,0 +1,121 @@
+/* Error flow and Metrics flow. The theme gives the type (.ap, .num), the controls (.detent), the
+   pips and the ruled table (.tbl); what is here is the page's own layout, in the theme's tokens:
+   hairlines, no radius, no shadow, no gradient. Every class of its own is `cm-flow-*` or `cf-*`,
+   so no rule of the theme reaches it. The rubric marks what is chosen; data takes chart hues. */
+
+#cc .cm-flow{flex:1;min-height:0;overflow:auto;padding:0 var(--cx-end,18px) 24px 18px;}
+
+/* a kind's hue: never the rubric, which marks what is chosen */
+#cc .cm-flow .cf-k-panic{--k:var(--cc-chart-s5);}
+#cc .cm-flow .cf-k-error,#cc .cm-flow .cf-k-failed{--k:var(--cc-chart-s4);}
+#cc .cm-flow .cf-k-warning{--k:var(--cc-chart-s3);}
+#cc .cm-flow .cf-k-http_status,#cc .cm-flow .cf-k-ok{--k:var(--cc-chart-s0);}
+#cc .cm-flow .cf-k-ui_render,#cc .cm-flow .cf-k-ui_error,#cc .cm-flow .cf-k-ui_rejection,#cc .cm-flow .cf-k-ui_console{--k:var(--cc-chart-s2);}
+#cc .cm-flow .cf-k-log_flood,#cc .cm-flow .cf-k-ui_request,#cc .cm-flow .cf-k-collector_dropped{--k:var(--cc-chart-context);}
+#cc .cm-flow .cf-sw{display:inline-block;flex:none;width:7px;height:7px;margin-right:8px;vertical-align:1px;background:var(--k,var(--cc-chart-context));}
+
+/* the kept days: a pip and a day's stack, the number under it */
+#cc .cm-flow-days{padding:16px 0 12px;border-bottom:1px solid var(--rule);}
+#cc .cm-flow-days .cf-strip{display:flex;align-items:flex-end;height:92px;}
+#cc .cm-flow-days .cf-day{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;
+  padding:0 0 4px;border:0;border-bottom:1px solid transparent;background:transparent;cursor:pointer;}
+#cc .cm-flow-days .cf-day:hover{background:var(--rubric-wash);}
+#cc .cm-flow-days .cf-day.cf-sel{border-bottom-color:var(--rubric);}
+#cc .cm-flow-days .cf-stack{width:3px;display:flex;flex-direction:column-reverse;overflow:hidden;}
+#cc .cm-flow-days .cf-stack i{display:block;width:100%;min-height:1px;background:var(--k,var(--cc-chart-context));}
+#cc .cm-flow-days .cf-day.cf-sel .cf-stack{width:5px;}
+#cc .cm-flow-days .pip{background:var(--ink-3);}
+#cc .cm-flow-days .pip.hollow{background:transparent;}
+#cc .cm-flow-days .cf-sel .pip{background:var(--rubric);}
+#cc .cm-flow-days .cf-lbl{font-size:11px;color:var(--ink-3);}
+#cc .cm-flow-days .cf-sel .cf-lbl{color:var(--rubric);}
+
+/* the filters in force */
+#cc .cm-flow-chain{display:flex;flex-wrap:wrap;gap:6px;padding:12px 0 0;}
+
+/* the figures */
+#cc .cm-flow-figs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);border-bottom:1px solid var(--rule);}
+#cc .cm-flow-figs .cf-fig{padding:14px 16px 12px;border-left:1px solid var(--rule);min-width:0;}
+#cc .cm-flow-figs .cf-fig:first-child{border-left:0;padding-left:0;}
+#cc .cm-flow-figs .cf-v{font-size:24px;line-height:1.1;margin-top:8px;white-space:nowrap;color:var(--ink);}
+#cc .cm-flow-figs .cf-fig.cf-key .cf-v{color:var(--rubric);}
+#cc .cm-flow-figs .cf-d{font-family:var(--font-apparatus);font-size:10px;color:var(--ink-3);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#cc .cm-flow-figs .cf-d.cf-bad{color:var(--rubric);}
+
+/* a section, headed as Releases heads its blocks */
+#cc .cm-flow-sec{padding:16px 0;border-bottom:1px solid var(--rule);}
+#cc .cm-flow-sec:last-child{border-bottom:0;}
+#cc .cm-flow-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+#cc .cm-flow-hd .grow{flex:1;}
+#cc .cm-flow-empty{margin:0;padding:12px 0;font-family:var(--font-reading);font-size:13.5px;font-style:italic;color:var(--ink-3);}
+
+/* the timeline */
+#cc .cm-flow-plot{position:relative;padding:0 0 22px 40px;}
+#cc .cm-flow-plot.cf-compact{padding:0 0 0 40px;margin:10px 0 4px;}
+#cc .cm-flow-plot svg{display:block;width:100%;height:200px;}
+#cc .cm-flow-plot.cf-compact svg{height:56px;}
+#cc .cm-flow-plot rect{fill:var(--k,var(--cc-chart-context));}
+#cc .cm-flow-plot rect.cf-hit{cursor:pointer;}
+#cc .cm-flow-plot rect.cf-hit:hover{fill:var(--ink);}
+#cc .cm-flow-plot .cf-grid{stroke:var(--rule);stroke-width:1;vector-effect:non-scaling-stroke;}
+#cc .cm-flow-plot .cf-grid.cf-major{stroke:var(--rule-2);}
+#cc .cm-flow-plot .cf-max{position:absolute;left:0;top:-2px;font-size:11px;color:var(--ink-3);}
+#cc .cm-flow-plot .cf-axis{position:absolute;left:40px;right:0;bottom:0;height:16px;}
+#cc .cm-flow-plot .cf-axis span{position:absolute;transform:translateX(-50%);font-size:11px;color:var(--ink-3);white-space:nowrap;}
+#cc .cm-flow-plot .cf-axis span:first-child{transform:none;}
+#cc .cm-flow-plot .cf-axis span:last-child{transform:translateX(-100%);}
+
+/* the kinds: each a filter */
+#cc .cm-flow-legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+#cc .cm-flow-legend .cf-key-btn{display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid var(--rule);background:transparent;cursor:pointer;
+  font-family:var(--font-apparatus);font-size:9.5px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;color:var(--ink-2);}
+#cc .cm-flow-legend .cf-key-btn:hover{border-color:var(--ink-3);color:var(--ink);}
+#cc .cm-flow-legend .cf-key-btn.cf-on{border-color:var(--rubric);color:var(--ink);}
+#cc .cm-flow-legend .cf-key-btn.cf-off{color:var(--ink-3);}
+
+/* the filters: every name a filter */
+#cc .cm-flow-facets{display:grid;gap:22px;}
+#cc .cm-flow-facets .cf-rank{min-width:0;}
+#cc .cm-flow-facets h4{margin:0 0 4px;display:flex;justify-content:space-between;gap:10px;padding-bottom:6px;border-bottom:1px solid var(--rule-2);}
+#cc .cm-flow-facets .cf-row{width:100%;display:flex;align-items:center;gap:10px;padding:7px 8px;border:0;border-bottom:1px solid var(--rule);border-left:1px solid transparent;
+  background:transparent;cursor:pointer;text-align:left;color:var(--ink);}
+#cc .cm-flow-facets .cf-row:hover{background:var(--rubric-wash);}
+#cc .cm-flow-facets .cf-row.cf-on{border-left-color:var(--rubric);background:var(--rubric-wash);}
+#cc .cm-flow-facets .cf-n{flex:1;min-width:0;display:flex;align-items:center;font-family:var(--font-reading);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#cc .cm-flow-facets .cf-c{font-size:12px;color:var(--ink-2);}
+
+/* the rows: the theme's ruled table */
+#cc .cm-flow-tbl-wrap{overflow-x:auto;}
+#cc .cm-flow .tbl{max-width:none;margin:0;}
+#cc .cm-flow .tbl th{padding:0 12px 6px 0;white-space:nowrap;}
+#cc .cm-flow .tbl td{font-size:13.5px;line-height:1.45;padding:7px 12px 7px 0;white-space:nowrap;vertical-align:top;}
+#cc .cm-flow .tbl td.k{font-family:var(--font-apparatus);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);}
+#cc .cm-flow .tbl .cf-r{text-align:right;}
+#cc .cm-flow .tbl .cf-dim{color:var(--ink-3);}
+#cc .cm-flow .tbl .cf-bad{color:var(--rubric);}
+#cc .cm-flow .tbl .cf-mono{font-family:var(--font-mono);font-size:11px;}
+#cc .cm-flow .tbl td.cf-clip{max-width:320px;overflow:hidden;text-overflow:ellipsis;}
+#cc .cm-flow .tbl td.cf-msg{max-width:440px;color:var(--ink-2);}
+#cc .cm-flow .tbl tr.cf-rec{cursor:pointer;}
+#cc .cm-flow .tbl tr.cf-rec:hover td{background:var(--rubric-wash);}
+#cc .cm-flow .tbl tr.cf-open td{border-bottom-color:transparent;background:var(--rubric-wash);}
+#cc .cm-flow .tbl td.cf-detail-cell{padding:0;white-space:normal;}
+
+/* an opened row */
+#cc .cm-flow-detail{padding:12px 16px 16px;border-left:1px solid var(--rubric);border-bottom:1px solid var(--rule);}
+#cc .cm-flow-detail h5{margin:16px 0 8px;}
+#cc .cm-flow-detail .cf-acts{display:flex;gap:8px;margin-top:12px;}
+#cc .cm-flow-detail .cf-kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:3px 14px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);}
+#cc .cm-flow-detail .cf-kv .cf-k{color:var(--ink-3);}
+#cc .cm-flow-detail .cf-kv span{overflow-wrap:anywhere;white-space:pre-wrap;}
+#cc .cm-flow-detail .cf-scenario{padding:10px 0;border-top:1px solid var(--rule);}
+#cc .cm-flow-detail .cf-scenario:first-of-type{border-top:0;}
+#cc .cm-flow-detail pre{margin:6px 0 0;padding:10px 12px;border:1px solid var(--rule);background:var(--ground);color:var(--ink-2);font-family:var(--font-mono);font-size:11px;
+  white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;}
+#cc .cm-flow-detail pre.cf-stack-text{max-height:360px;}
+
+@media (max-width:1100px){
+  #cc .cm-flow-figs{grid-auto-flow:row;grid-template-columns:repeat(4,minmax(0,1fr));}
+  #cc .cm-flow-figs .cf-fig:nth-child(4n+1){border-left:0;padding-left:0;}
+  #cc .cm-flow-facets{grid-template-columns:repeat(2,minmax(0,1fr)) !important;}
+}

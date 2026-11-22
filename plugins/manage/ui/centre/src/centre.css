@@ -3,8 +3,10 @@
 #cc .cm-centre{flex:1;min-height:0;display:flex;flex-direction:column;}
 #cc .cm-centre>.cx-slot{flex:1;min-height:0;}
 #cc .cm-centre>.colhead{flex:0 0 auto;position:static;}
+/* a head's controls end where the band's buttons end when this is the last column */
+#cc .cm-centre .colhead{padding-right:var(--cx-end,16px);}
 #cc .cm-page{flex:1;min-height:0;overflow:auto;}
-#cc .cm-page.pad{padding:0 16px 24px 18px;}
+#cc .cm-page.pad{padding:0 var(--cx-end,16px) 24px 18px;}
 
 /* The three pages of a repository: apparatus words, the open one in rubric. */
 #cc .cm-ptabs{display:flex;gap:14px;align-items:center;}
@@ -14,7 +16,7 @@
 
 /* The inbox, in the theme's arrivals grammar. A row here is not one button: it carries its own
    detents, so the row takes the grid the theme gives an arrival's button, and its text wraps. */
-#cc .cm-arr li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:0 8px;padding:12px 16px 13px 6px;}
+#cc .cm-arr li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:0 8px;padding:12px var(--cx-end,16px) 13px 6px;}
 #cc .cm-arr .mk{grid-row:1;}
 #cc .cm-arr .who{border:0;background:transparent;padding:0;cursor:pointer;text-align:left;min-width:0;}
 #cc .cm-arr button.who:hover{color:var(--rubric);}
@@ -25,11 +27,11 @@
 #cc .cm-arr .cm-note-row .field{flex:1;}
 #cc .cm-arr .cm-note-row .field input{font-family:var(--font-reading);font-size:13px;letter-spacing:0;}
 #cc .cm-subhead{position:static;}
-#cc .cm-page>.inline-error{margin:10px 16px 10px 18px;}
+#cc .cm-page>.inline-error{margin:10px var(--cx-end,16px) 10px 18px;}
 
 #cc .cm-paths{margin:0;padding:0;list-style:none;font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--ink-2);overflow-wrap:anywhere;}
 #cc .cm-new{flex:1;min-height:0;display:flex;flex-direction:column;}
 #cc .cm-new-body{flex:1;min-height:0;}
-#cc .cm-new .cm-composer{margin-top:0;border-top:1px solid var(--rule);padding:10px 18px 14px;}
+#cc .cm-new .cm-composer{margin-top:0;border-top:1px solid var(--rule);padding:10px var(--cx-end,18px) 14px 18px;}
 /* the composer as CortexCode's: one box, the field, then its controls inside it */
 #cc .cm-composer .inline-error{margin:0 0 8px;}

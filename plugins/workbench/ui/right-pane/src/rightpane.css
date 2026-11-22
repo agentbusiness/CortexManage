@@ -1,6 +1,6 @@
 /* workbench.rightPane@1 — the tab strip (the design's `.seg-set`) over one tab's view. */
 #cc .cx-pane{flex:1;min-height:0;display:flex;flex-direction:column;}
-#cc .cx-pane-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 16px 8px 16px;border-bottom:1px solid var(--rule);}
+#cc .cx-pane-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px var(--cx-end,16px) 8px 16px;border-bottom:1px solid var(--rule);}
 #cc .cx-pane-tabs .grow{flex:1;}
 #cc .cx-pane-tabs .seg-set{flex:0 1 auto;flex-wrap:wrap;min-width:0;}
 #cc .cx-pane-body{flex:1;min-height:0;display:flex;flex-direction:column;}

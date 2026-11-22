@@ -25,6 +25,8 @@ import {
 import { dropOnCard, dropOnColumn, reportLine, stateLine, tagLine, type Move } from './moves';
 import { AddRepo } from './AddRepo';
 import { RepoSheet } from './RepoSheet';
+import { FlowPage, useFlow, type Table } from './Flow';
+import './flow.css';
 
 const listRepos = async (client: Client) => (await client.call<{ repos: Repo[] }>('manage.repo.list', {}))?.repos ?? [];
 
@@ -130,6 +132,12 @@ export function BoardView({ now }: { now: number }) {
   const dragged = useRef<BoardItem | null>(null);
   // The repository the board shows; empty: all of them.
   const [only, setOnly] = useSlotState<string>('board.repo', '');
+  // What the board area shows: the board, or the Error flow or Metrics flow page.
+  const [page, setPage] = useSlotState<'board' | Table>('board.page', 'board');
+  // The computer the flow pages show; empty: all of them.
+  const [node, setNode] = useSlotState<string>('flow.node', '');
+  const flow = useFlow(page === 'board' ? null : page, only, node);
+  const togglePage = (next: Table) => setPage(page === next ? 'board' : next);
   // Where a card was dropped, until the board's next answer says where its work is.
   const [placed, setPlaced] = useState<Record<string, Column>>({});
   useEffect(() => setPlaced({}), [board.data]);
@@ -259,13 +267,25 @@ export function BoardView({ now }: { now: number }) {
             ]}
           />
         )}
-        {chosen && <button type="button" className="detent" onClick={() => settingsOf(chosen.id)}>Settings</button>}
+        {page !== 'board' && (
+          <Menu
+            label="Computer"
+            value={flow.computers.find((computer) => computer.node === node)?.name ?? (node || 'All computers')}
+            items={[
+              { key: '', label: 'All computers', selected: !node, onSelect: () => setNode('') },
+              ...flow.computers.map((computer) => ({ key: computer.node, label: computer.name, selected: computer.node === node, onSelect: () => setNode(computer.node) })),
+            ]}
+          />
+        )}
+        {chosen && page === 'board' && <button type="button" className="detent" onClick={() => settingsOf(chosen.id)}>Settings</button>}
         {said && <span className="said" role="status">{said}</span>}
         <span className="grow" />
         {managed.length > 0 && (
           <button type="button" className="detent" onClick={() => fold(setSelection, { view: 'new', repo: (chosen ?? managed[0]!).id, request: null, package: null })}>New request</button>
         )}
         <button type="button" className="detent" onClick={() => setAdding(true)}>Add repo</button>
+        <button type="button" className="detent" aria-pressed={page === 'errors'} title={page === 'errors' ? 'Back to the board' : 'What failed in the apps, by the minute'} onClick={() => togglePage('errors')}>Error flow</button>
+        <button type="button" className="detent" aria-pressed={page === 'calls'} title={page === 'calls' ? 'Back to the board' : 'What the apps served, by the minute'} onClick={() => togglePage('calls')}>Metrics flow</button>
         <button type="button" className="detent" title="Fold the board into the sidebar (B)" onClick={() => setShared(LAYOUT_BOARD, false)}>Fold</button>
       </div>
       {editingRepo && <RepoSheet repo={editingRepo} onClose={() => { setEditing(null); void repos.refresh(); }} />}
@@ -273,8 +293,9 @@ export function BoardView({ now }: { now: number }) {
       {act.failed('move') && <p className="inline-error cm-board-note">{act.failed('move')}</p>}
       {repos.error && !repos.data && <p className="inline-error cm-board-note">{loadFailure('The repositories', repos)}</p>}
       {board.error && !board.data && <p className="inline-error cm-board-note">{loadFailure('The requests', board)}</p>}
-      {repos.data && list.length === 0 && <p className="cm-line">No repository yet. Add one with Add repo.</p>}
-      {asks.length > 0 && (
+      {page !== 'board' && <FlowPage table={page} flow={flow} openRequest={(request) => fold(setSelection, sessionOf(request))} />}
+      {page === 'board' && repos.data && list.length === 0 && <p className="cm-line">No repository yet. Add one with Add repo.</p>}
+      {page === 'board' && asks.length > 0 && (
         <div className="cm-needs">
           {asks.map((ask) => {
             const item = items.find((each) => each.id === ask.request);
@@ -291,7 +312,7 @@ export function BoardView({ now }: { now: number }) {
           })}
         </div>
       )}
-      {sections ? (
+      {page !== 'board' ? null : sections ? (
         <div className="cm-sw">
           <div className="cm-sw-head">
             {COLUMNS.map((column) => (

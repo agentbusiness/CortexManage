@@ -28,7 +28,7 @@ provides = [
   "manage.runner.release", "manage.runner.get",
   "manage.board.items",
   "manage.shares",
-  "manage.reports.send",
+  "manage.reports.send", "manage.reports.read", "manage.reports.request",
 ]
 publishes = ["manage.changed", "manage.watch"]
 subscribes = ["plugin.state", "plugin.swapped", "train.released"]

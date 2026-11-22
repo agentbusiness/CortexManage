@@ -8,12 +8,12 @@
 #cc .tag.major{color:var(--rubric);border-color:var(--rubric);}
 
 /* One plain sentence where there is nothing to draw, or where a part is missing. */
-#cc .cm-line{margin:0;padding:14px 18px;font-family:var(--font-reading);font-size:14px;line-height:1.45;color:var(--ink-3);font-style:italic;}
+#cc .cm-line{margin:0;padding:14px var(--cx-end,18px) 14px 18px;font-family:var(--font-reading);font-size:14px;line-height:1.45;color:var(--ink-3);font-style:italic;}
 #cc .cm-line.flush{padding:6px 0;}
 #cc .cm-fail{margin:6px 0 0;}
 
 /* A section of a right-pane tab or of a page: its label, then rows of name and value. */
-#cc .cm-pane{flex:1;min-height:0;overflow:auto;padding:0 16px 24px 18px;}
+#cc .cm-pane{flex:1;min-height:0;overflow:auto;padding:0 var(--cx-end,16px) 24px 18px;}
 #cc .cm-pane-h{height:32px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--rule);}
 #cc .cm-pane-h .grow{flex:1;}
 #cc .cm-sec{padding:14px 0 12px;border-bottom:1px solid var(--rule);}

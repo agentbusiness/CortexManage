@@ -23,6 +23,11 @@ body{overflow:hidden;}
 #cc .cx-work[data-sidebar="board"]>.cx-center{visibility:hidden;overflow:hidden;}
 #cc .cx-work[data-sidebar="board"]>.cx-divider{visibility:hidden;pointer-events:none;}
 #cc .cx-work[data-sidebar="board"]>.cx-pane-divider{visibility:visible;pointer-events:none;cursor:default;}
+/* The last region's right edge is the band's: --cx-end is 0 there, so a plugin's right padding
+   (var(--cx-end, its own)) ends its controls where the band's buttons end. */
+#cc .cx-work>.cx-right,
+#cc .cx-work[data-pane="collapsed"]>.cx-center,
+#cc .cx-work[data-sidebar="board"][data-pane="collapsed"]>.cx-left{--cx-end:0px;}
 #cc .cx-left,#cc .cx-center,#cc .cx-right{min-width:0;min-height:0;display:flex;flex-direction:column;position:relative;}
 #cc .cx-right{display:grid;grid-template-rows:minmax(0,1fr);}
 #cc .cx-left>.cx-slot,#cc .cx-center>.cx-slot{flex:1;min-height:0;}

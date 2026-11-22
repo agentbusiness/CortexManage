@@ -5,18 +5,18 @@
 #cc .cm-board .grow{flex:1;}
 
 /* the bar: what just happened, then the board's three controls */
-#cc .cm-board-bar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:12px 18px 0;}
+#cc .cm-board-bar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:12px var(--cx-end,18px) 0 18px;}
 #cc .cm-board-bar .said{font-family:var(--font-apparatus);font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--counter);}
-#cc .cm-board-note{margin:8px 18px 0;}
+#cc .cm-board-note{margin:8px var(--cx-end,18px) 0 18px;}
 
 /* a major change waiting for a yes: only while there is one */
-#cc .cm-needs{flex:0 0 auto;margin:12px 18px 0;border:1px solid var(--rubric);padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
+#cc .cm-needs{flex:0 0 auto;margin:12px var(--cx-end,18px) 0 18px;border:1px solid var(--rubric);padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
 #cc .cm-needs .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 #cc .cm-needs .what{flex:1;min-width:0;font-family:var(--font-reading);font-size:13.5px;color:var(--ink);}
 #cc .cm-needs .inline-error{margin:0;}
 
 /* the kanban: five columns side by side, each its own box, cards stacked in it */
-#cc .cm-kanban{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:12px 18px 18px;}
+#cc .cm-kanban{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:12px var(--cx-end,18px) 18px 18px;}
 #cc .cm-col{min-height:0;display:flex;flex-direction:column;border:1px solid var(--rule);}
 #cc .cm-col.over{border-color:var(--counter);background:var(--rubric-wash);}
 #cc .cm-col-head{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;padding:10px 12px 9px;border-bottom:1px solid var(--rule);}
@@ -48,7 +48,7 @@
 
 /* all repositories: column names once, then a section per repository, one under another, each with
    its own five lanes, boxed like the single board's */
-#cc .cm-sw{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 18px 18px;}
+#cc .cm-sw{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px var(--cx-end,18px) 18px 18px;}
 #cc .cm-sw-head{flex:0 0 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;}
 #cc .cm-sw-head .nm{display:flex;align-items:baseline;gap:8px;padding:10px 12px 9px;border:1px solid var(--rule);font-family:var(--font-apparatus);font-size:10.5px;font-weight:650;letter-spacing:.15em;text-transform:uppercase;color:var(--ink);}
 #cc .cm-sw-head .n{font-size:10px;font-weight:600;letter-spacing:0;color:var(--ink-3);}

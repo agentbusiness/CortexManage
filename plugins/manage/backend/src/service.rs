@@ -435,7 +435,7 @@ impl Manager {
         self.store.read(|data| data.packages.get(id).cloned()).ok_or_else(|| RpcError::not_found(format!("no package `{id}`")))
     }
 
-    fn request_view_of(&self, id: &str) -> Result<RequestView, RpcError> {
+    pub(crate) fn request_view_of(&self, id: &str) -> Result<RequestView, RpcError> {
         self.store.read(|data| data.requests.get(id).map(|rec| request_view(data, rec))).ok_or_else(|| RpcError::not_found(format!("no request `{id}`")))
     }
 
@@ -560,6 +560,8 @@ impl Manager {
             methods::REPO_EDIT => self.repo_edit(parse_params(params)?),
             methods::REQUEST_CREATE => self.request_create(params).await,
             reports::methods::SEND => crate::reports::send(self, params).await,
+            methods::REPORTS_READ => crate::reports::read(self, params).await,
+            methods::REPORTS_REQUEST => crate::reports::request(self, params).await,
             methods::REQUEST_GET => to_value(&self.request_view_of(&id_of(&params)?)?),
             methods::REQUEST_LIST => self.request_list(parse_params(params)?),
             methods::REQUEST_EDIT => self.request_edit(parse_params(params)?).await,

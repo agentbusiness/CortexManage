@@ -3,7 +3,7 @@
  * the ruled table (.tbl); what is here is the page's own layout, in the theme's tokens: hairlines,
  * no radius, no shadow.
  */
-.rt-page{display:flex;flex-direction:column;gap:14px;padding:18px 22px 20px 18px;min-height:0;overflow:auto;}
+.rt-page{display:flex;flex-direction:column;gap:14px;padding:18px var(--cx-end,22px) 20px 18px;min-height:0;overflow:auto;}
 .rt-block{border:1px solid var(--rule);padding:12px 14px;}
 .rt-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
 .rt-hd .grow{flex:1;}

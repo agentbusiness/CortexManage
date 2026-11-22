@@ -66,6 +66,146 @@ pub async fn send(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcErr
     to_value(&SendResult { accepted: true, reason: String::new() })
 }
 
+/// What the Error flow and Metrics flow pages read: one table of every repository's reports (or
+/// one repository's, one computer's), the kept days with their totals, the computers that sent,
+/// and every row of the chosen days. A row is the app's own, with who sent it beside it.
+pub async fn read(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcError> {
+    let table = params.get("table").and_then(Value::as_str).unwrap_or(tables::ERRORS).to_owned();
+    let only_repo = params.get("repo").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let only_node = params.get("node").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let now = now_ms();
+    let today = day_of(now as i64);
+    let days: Vec<String> = (0..KEEP_DAYS as i64).rev().map(|back| day_of(now as i64 - back * DAY_MS)).collect();
+    let from = params.get("from").and_then(Value::as_str).filter(|day| !day.is_empty()).unwrap_or(&today).to_owned();
+    let to = params.get("to").and_then(Value::as_str).filter(|day| !day.is_empty()).unwrap_or(&today).to_owned();
+    // A day more than kept: a row arrives a little after it happened.
+    let since = now.saturating_sub((KEEP_DAYS as u64 + 1) * DAY_MS as u64);
+    let prefix = topic("");
+    let repos: Vec<String> = manager.store.read(|data| data.repos.keys().cloned().collect());
+    let mut totals: std::collections::BTreeMap<String, (u64, u64, serde_json::Map<String, Value>)> = days.iter().map(|day| (day.clone(), (0, 0, serde_json::Map::new()))).collect();
+    let mut computers: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut rows: Vec<Value> = Vec::new();
+    for name in manager.store.graph.topics(&prefix).await? {
+        let repo = name.strip_prefix(&prefix).unwrap_or_default().to_owned();
+        if !repos.contains(&repo) || (!only_repo.is_empty() && repo != only_repo) {
+            continue;
+        }
+        for entry in manager.store.graph.since(&name, since).await? {
+            let kept = entry.value;
+            if kept.get("table").and_then(Value::as_str) != Some(table.as_str()) {
+                continue;
+            }
+            let node = kept.get("node").and_then(Value::as_str).unwrap_or_default().to_owned();
+            let machine = kept.get("machine").and_then(Value::as_str).unwrap_or_default().to_owned();
+            if !node.is_empty() {
+                computers.insert(node.clone(), machine.clone());
+            }
+            if !only_node.is_empty() && node != only_node {
+                continue;
+            }
+            let Some(Value::Object(mut row)) = kept.get("row").cloned() else { continue };
+            let at = row.get("first_at_ms").and_then(Value::as_i64).unwrap_or(entry.at_ms as i64);
+            let day = day_of(at);
+            let count = row.get("count").and_then(Value::as_u64).unwrap_or(1);
+            let kind_field = if table == tables::ERRORS { "kind" } else { "outcome" };
+            let kind = row.get(kind_field).and_then(Value::as_str).unwrap_or_default().to_owned();
+            if let Some((sum, groups, by_kind)) = totals.get_mut(&day) {
+                *sum += count;
+                *groups += 1;
+                let before = by_kind.get(&kind).and_then(Value::as_u64).unwrap_or(0);
+                by_kind.insert(kind, json!(before + count));
+            }
+            if day < from || day > to {
+                continue;
+            }
+            row.insert("repo".into(), json!(repo));
+            row.insert("app".into(), kept.get("software").cloned().unwrap_or(Value::Null));
+            row.insert("app_version".into(), kept.get("version").cloned().unwrap_or(Value::Null));
+            row.insert("node".into(), json!(node));
+            row.insert("computer".into(), json!(if machine.is_empty() { node.clone() } else { machine }));
+            rows.push(Value::Object(row));
+        }
+    }
+    // Each failure's request: the open one, else the newest, so the page can say what became of it.
+    let requests: serde_json::Map<String, Value> = if table == tables::ERRORS {
+        manager.store.read(|data| {
+            let mut out: std::collections::BTreeMap<String, (bool, u64, Value)> = std::collections::BTreeMap::new();
+            for rec in data.requests.values().filter(|rec| !rec.r.fingerprint.is_empty()) {
+                let key = format!("{}|{}", rec.r.repo, rec.r.fingerprint);
+                let open = rec.r.ended_as.is_empty();
+                let rank = (open, rec.r.created_ms);
+                if out.get(&key).is_some_and(|(o, c, _)| (*o, *c) >= rank) {
+                    continue;
+                }
+                let state = if open { rec.r.stage.clone() } else { rec.r.ended_as.clone() };
+                out.insert(key, (open, rec.r.created_ms, json!({"id": rec.r.id, "repo": rec.r.repo, "package": rec.r.package, "open": open, "state": state})));
+            }
+            out.into_iter().map(|(key, (_, _, view))| (key, view)).collect()
+        })
+    } else {
+        serde_json::Map::new()
+    };
+    let days: Vec<Value> = totals.into_iter().map(|(date, (count, groups, by_kind))| json!({"date": date, "count": count, "groups": groups, "by_kind": by_kind})).collect();
+    let computers: Vec<Value> = computers.into_iter().map(|(node, name)| json!({"node": node, "name": if name.is_empty() { node.clone() } else { name }})).collect();
+    Ok(json!({"table": table, "today": today, "keep_days": KEEP_DAYS, "days": days, "computers": computers, "rows": rows, "requests": requests}))
+}
+
+/// A person asks for a reported failure to be repaired: its request is opened as a report opens
+/// one, from the newest row of that fingerprint, unless one is open already (then that one).
+pub async fn request(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcError> {
+    let repo_id = params.get("repo").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let fingerprint = params.get("fingerprint").and_then(Value::as_str).unwrap_or_default().to_owned();
+    if fingerprint.is_empty() {
+        return Err(RpcError::invalid_params("a failure is named by its repository and fingerprint"));
+    }
+    let repo = manager.repo(&repo_id)?;
+    let open: Option<String> = manager.store.read(|data| {
+        data.requests.values().find(|rec| rec.r.repo == repo_id && rec.r.ended_as.is_empty() && rec.r.fingerprint == fingerprint).map(|rec| rec.r.id.clone())
+    });
+    if let Some(id) = open {
+        return to_value(&manager.request_view_of(&id)?);
+    }
+    let since = now_ms().saturating_sub((KEEP_DAYS as u64 + 1) * DAY_MS as u64);
+    let mut newest: Option<(Sender, ErrorRecord)> = None;
+    for entry in manager.store.graph.since(&topic(&repo_id), since).await? {
+        let kept = entry.value;
+        if kept.get("table").and_then(Value::as_str) != Some(tables::ERRORS) {
+            continue;
+        }
+        let Some(row) = kept.get("row").cloned() else { continue };
+        let Ok(record) = serde_json::from_value::<ErrorRecord>(row) else { continue };
+        if record.fingerprint != fingerprint || newest.as_ref().is_some_and(|(_, best)| best.last_at_ms > record.last_at_ms) {
+            continue;
+        }
+        let text = |field: &str| kept.get(field).and_then(Value::as_str).unwrap_or_default().to_owned();
+        let sender = Sender {
+            repo: text("repo"),
+            software: text("software"),
+            version: text("version"),
+            machine: cc_protocol::contracts::reports::Machine { node: text("node"), name: text("machine"), ..Default::default() },
+        };
+        newest = Some((sender, record));
+    }
+    let Some((sender, record)) = newest else {
+        return Err(RpcError::not_found("this failure is no longer kept: reports are kept a week"));
+    };
+    failure(manager, &repo, &sender, record).await;
+    let id: Option<String> = manager.store.read(|data| {
+        data.requests.values().find(|rec| rec.r.repo == repo_id && rec.r.ended_as.is_empty() && rec.r.fingerprint == fingerprint).map(|rec| rec.r.id.clone())
+    });
+    match id {
+        Some(id) => to_value(&manager.request_view_of(&id)?),
+        None => Err(RpcError::internal("the request could not be opened; the manage log says why")),
+    }
+}
+
+const DAY_MS: i64 = 86_400_000;
+
+/// `YYYY-MM-DD` (UTC) of a time.
+fn day_of(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms).map(|at| at.format("%Y-%m-%d").to_string()).unwrap_or_default()
+}
+
 /// One failure: counted on the open request of its fingerprint, or a new request.
 async fn failure(manager: &Arc<Manager>, repo: &RepoRec, sender: &Sender, record: ErrorRecord) {
     let open: Option<String> = manager.store.read(|data| {
