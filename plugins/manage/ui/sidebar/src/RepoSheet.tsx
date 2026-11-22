@@ -55,7 +55,7 @@ interface Draft {
 }
 
 /** The fields of how a repository ships a person can correct, as `manage.delivery.edit` takes them. */
-const DELIVERY_FIELDS = ['reach_main', 'main_is', 'release_kind', 'release_steps', 'plan_step', 'tag', 'version_kind', 'version_file', 'version_key', 'checks', 'ships', 'ci', 'secret_files', 'secrets_from'] as const;
+const DELIVERY_FIELDS = ['reach_main', 'main_is', 'release_kind', 'release_steps', 'plan_step', 'tag', 'version_kind', 'version_file', 'version_key', 'checks', 'ships', 'ci', 'secret_files'] as const;
 type DeliveryField = (typeof DELIVERY_FIELDS)[number];
 
 function deliveryText(delivery: Delivery | undefined, field: DeliveryField): string {
@@ -63,6 +63,10 @@ function deliveryText(delivery: Delivery | undefined, field: DeliveryField): str
   const value = (delivery as unknown as Record<string, unknown>)[field];
   return Array.isArray(value) ? value.join('\n') : String(value ?? '');
 }
+
+/** One place a release reads its secrets from, as `manage.secrets.get` answers it: a file (empty:
+ *  the environment), what its text starts as, and whether a person filled it in. */
+interface SecretPlace { file: string; template: string; filled: boolean }
 
 /** A GitHub connection as `vcs.github.connections` answers it. */
 interface Connection { id: string; login: string; name: string }
@@ -168,7 +172,6 @@ function Ships({ repo, onLearn, busy, onSetUp }: { repo: Repo; onLearn: () => vo
           {row('Version', 'version_kind', d.version_kind ? versionLine(d) : '')}
           {row('Checks', 'checks', d.checks.join(' · '))}
           {row('Ships', 'ships', d.ships)}
-          {d.secrets.length > 0 && row('Secrets', 'secrets', d.secrets.join(', '))}
         </>
       )}
     </>
@@ -238,6 +241,37 @@ function Hours({ value, label, onChange }: { value: string; label: string; onCha
   );
 }
 
+/** One place the release reads its secrets from: the text to paste the values into (`text`), or,
+ *  when they are kept and not being replaced (`text` null), that they are. */
+function SecretRow({ first, place, text, onText }: { first: boolean; place: SecretPlace; text: string | null; onText: (text: string) => void }) {
+  return (
+    <>
+      <span className="ap">{first ? 'Secrets' : ''}</span>
+      <span className="cm-set-cell cm-secret">
+        {place.file && <span className="cm-ship-v mono">{place.file}</span>}
+        {text === null ? (
+          <>
+            <span className="cm-ship-state">Kept in the Keychain</span>
+            <button type="button" className="detent" onClick={() => onText(place.template)}>Replace</button>
+          </>
+        ) : (
+          <>
+            {!place.filled && <span className="cm-ship-state bad">Paste the values before the first release.</span>}
+            <textarea
+              className="cm-text mono"
+              rows={Math.max(2, text.split('\n').length)}
+              value={text}
+              spellCheck={false}
+              aria-label={place.file ? `The text of ${place.file}` : 'The release\'s environment, NAME=value per line'}
+              onChange={(event) => onText(event.target.value)}
+            />
+          </>
+        )}
+      </span>
+    </>
+  );
+}
+
 function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
   const client = useClient();
   const act = useAct();
@@ -253,12 +287,19 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
   const [synced, setSynced] = useState(baseText);
   const [invalid, setInvalid] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
+  // The secrets' texts as typed, by place; a place not here shows its template, or that it is kept.
+  const secrets = useQuery<SecretPlace[]>(`manage.secrets.get:${repo.id}`, async (c) => (await c.call<{ places: SecretPlace[] }>('manage.secrets.get', { repo: repo.id }))?.places ?? [], { topics: ['manage.changed'] });
+  const [secretText, setSecretText] = useState<Record<string, string>>({});
+  const secretChanged = (secrets.data ?? []).filter((place) => {
+    const typed = secretText[place.file]?.trim() ?? '';
+    return typed !== '' && typed !== place.template.trim();
+  });
   // The repository changed elsewhere: an untouched form follows it, an edited one keeps its edits.
   if (synced !== baseText) {
     if (JSON.stringify(draft) === synced) setDraft(base);
     setSynced(baseText);
   }
-  const dirty = JSON.stringify(draft) !== baseText;
+  const dirty = JSON.stringify(draft) !== baseText || secretChanged.length > 0;
   const set = (patch: Partial<Draft>) => {
     setInvalid(null);
     setDraft((current) => ({ ...current, ...patch }));
@@ -289,6 +330,10 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
         await client.call('manage.delivery.edit', { repo: repo.id, set });
         after = await client.call<Repo>('manage.repo.get', { id: repo.id });
       }
+      for (const place of secretChanged) {
+        await client.call('manage.secrets.set', { repo: repo.id, file: place.file, text: secretText[place.file] ?? '' });
+      }
+      setSecretText({});
       // The form shows what was kept, which may be stricter than what was typed.
       if (after && after.id === repo.id) {
         const kept = draftOf(after);
@@ -396,15 +441,18 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
       </span>
 
       <Ships repo={repo} busy={act.busy !== null} onLearn={learn} onSetUp={setUp} />
-      {(repo.delivery?.secret_files.length ?? 0) > 0 && (
-        <>
-          <span className="ap">Secret files</span>
-          <span className="cm-set-cell">
-            <span className="cm-ship-v">{repo.delivery!.secret_files.join(', ')}</span>
-            <label className="field"><input value={draft.delivery.secrets_from} placeholder="/path/on/the/release/machine" aria-label="Folder the secret files are taken from" onChange={(event) => setDelivery('secrets_from', event.target.value)} /></label>
-          </span>
-        </>
-      )}
+      {(secrets.data ?? []).map((place, index) => {
+        const typed = secretText[place.file];
+        return (
+          <SecretRow
+            key={place.file || 'environment'}
+            first={index === 0}
+            place={place}
+            text={typed ?? (place.filled ? null : place.template)}
+            onText={(text) => setSecretText((current) => ({ ...current, [place.file]: text }))}
+          />
+        );
+      })}
 
       <span />
       <span className="cm-set-cell">
@@ -481,7 +529,7 @@ function RepoSettings({ repo, saved }: { repo: Repo; saved: () => void }) {
 
       <span className="cm-set-foot">
         <button type="button" className="detent send" aria-pressed={dirty} disabled={!dirty || act.busy !== null} onClick={save}>Save</button>
-        <button type="button" className="detent" disabled={!dirty || act.busy !== null} onClick={() => { setInvalid(null); setDraft(base); }}>Revert</button>
+        <button type="button" className="detent" disabled={!dirty || act.busy !== null} onClick={() => { setInvalid(null); setDraft(base); setSecretText({}); }}>Revert</button>
         {failed && <p className="inline-error">{failed}</p>}
       </span>
     </div>

@@ -618,6 +618,8 @@ impl Manager {
             methods::REQUEST_STORY => self.request_story(&id_of(&params)?).await,
             methods::DELIVERY_LEARN => to_value(&crate::delivery::learn(self, params.get("repo").and_then(Value::as_str).unwrap_or_default())?),
             methods::DELIVERY_EDIT => to_value(&crate::delivery::edit(self, &parse_params(params)?)?),
+            methods::SECRETS_GET => crate::secrets::get(self, params.get("repo").and_then(Value::as_str).unwrap_or_default()),
+            methods::SECRETS_SET => crate::secrets::set(self, &params),
             methods::RELEASE_WAITS => {
                 let repo = params.get("repo").and_then(Value::as_str).unwrap_or_default().to_owned();
                 Ok(json!({"waits": self.release_waits(&repo)}))

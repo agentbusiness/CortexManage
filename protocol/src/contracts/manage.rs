@@ -84,6 +84,13 @@ pub mod methods {
     /// [`super::DeliveryEditParams`] -> [`super::Delivery`]: a person's correction; the fields
     /// they set are kept when the profile is learned again.
     pub const DELIVERY_EDIT: &str = "manage.delivery.edit";
+    /// `{repo}` -> `{places: [{file, template, filled}]}`: where the repository's release reads
+    /// its secrets (each secret file, or `""` for the environment), what each text starts as, and
+    /// whether a person filled it in. Never a value.
+    pub const SECRETS_GET: &str = "manage.secrets.get";
+    /// `{repo, file, text}` -> as [`SECRETS_GET`]: keep one place's text in the Keychain (empty:
+    /// remove it).
+    pub const SECRETS_SET: &str = "manage.secrets.set";
     /// `{repo}` -> `{waits: [title]}`: the requests a person said the next release waits for that
     /// are not ready yet.
     pub const RELEASE_WAITS: &str = "manage.release.waits";
@@ -263,8 +270,9 @@ pub struct Delivery {
     /// The secrets a release needs, by name only (never a value).
     #[serde(default)]
     pub secrets: Vec<String>,
-    /// Files a release reads that are not in git (`.env.release`), and the folder on the release
-    /// machine they are taken from (a person sets it).
+    /// Files a release reads that are not in git (`.env.release`). Their texts are given by a
+    /// person (`manage.secrets.set`); `secrets_from` is a folder on the release machine they were
+    /// taken from before, read only by a runner when no text is given.
     #[serde(default)]
     pub secret_files: Vec<String>,
     #[serde(default)]

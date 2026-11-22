@@ -17,6 +17,7 @@ pub mod pipeline;
 pub mod policy;
 pub mod release;
 pub mod reports;
+pub mod secrets;
 pub mod service;
 pub mod store;
 pub mod texts;
@@ -55,6 +56,8 @@ pub const PROVIDES: &[&str] = &[
     methods::REQUEST_STORY,
     methods::DELIVERY_LEARN,
     methods::DELIVERY_EDIT,
+    methods::SECRETS_GET,
+    methods::SECRETS_SET,
     methods::RELEASE_WAITS,
     methods::RULES_GET,
     methods::RULES_EDIT,

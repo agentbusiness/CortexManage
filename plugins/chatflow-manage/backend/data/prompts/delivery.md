@@ -18,7 +18,7 @@ Each item of `facts` is one value of one field, with where it is written:
 - `ships`: in a few words, what a release ships (`9 images to Docker Swarm`, `plugins and the app to GitHub releases`).
 - `ci`: the workflow file that builds and deploys main, for `merge` or `tag`.
 - `take_back`: in a few words, how a release is undone, when a file says it.
-- `secrets`: one item per secret name the release needs (a name only, never a value).
+- `secrets`: one item per name the release reads from its secret files or its environment that git does not hold, from the release script or an example file of it (a name only, never a value).
 - `secret_files`: one item per file the release reads that git does not hold (`.env.release`).
 
 `path` is the file, or `github:rules`, `github:workflows` or `github:pulls` for what GitHub declares. `line` is the line number shown before the words; 0 for GitHub.

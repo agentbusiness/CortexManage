@@ -111,8 +111,11 @@ async fn steps(manager: &Arc<Manager>, repo: &Repo, plan_only: bool) -> Result<V
     if plan_only && (delivery.plan_step.is_empty() || given) {
         return to_value(&answer(true, whole(), Vec::new(), String::new()));
     }
+    // The secrets the person gave; a release without them does not start (a plan goes with what
+    // there is).
+    let (secret_texts, secret_env) = crate::secrets::for_release(manager, repo, !plan_only)?;
     let node = manager.runner_of(repo).await?;
-    let mut env = Vec::new();
+    let mut env = secret_env;
     if let Some(version) = &version {
         env.push(("RELEASE_VERSION".to_owned(), version.clone()));
     }
@@ -124,8 +127,10 @@ async fn steps(manager: &Arc<Manager>, repo: &Repo, plan_only: bool) -> Result<V
         steps: delivery.release_steps.iter().map(|step| filled(step, &version_text)).collect(),
         plan_step: filled(&delivery.plan_step, &version_text),
         env,
-        secret_files: delivery.secret_files.clone(),
+        // Only a runner given a folder looks for the files itself; otherwise the texts are them.
+        secret_files: if delivery.secrets_from.is_empty() { Vec::new() } else { delivery.secret_files.clone() },
         secrets_from: delivery.secrets_from.clone(),
+        secret_texts,
         fetch_only: false,
         token: token_of(manager, repo).await,
     };

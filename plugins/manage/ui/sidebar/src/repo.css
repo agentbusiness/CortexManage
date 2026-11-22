@@ -30,3 +30,4 @@
 #cc .cm-ship-v.none{color:var(--ink-3);font-style:italic;}
 #cc .cm-ship-state{font-family:var(--font-reading);font-size:12.5px;font-style:italic;color:var(--ink-2);flex:1 1 200px;}
 #cc .cm-ship-state.bad{color:var(--rubric);font-style:normal;}
+#cc .cm-secret .cm-ship-state.bad{flex-basis:100%;}
