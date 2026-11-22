@@ -44,7 +44,8 @@ body{overflow:hidden;}
 /* The band is 44px with a 1px rule inside it: centring 22px in the 43px left puts every button on
    a half pixel (10.5px), and its border smears over two rows. Placed at a whole 11px instead. */
 #cc .band>.cx-band-item{align-self:flex-start;margin-top:11px;}
-#cc .band .cx-band-item button{height:22px;box-sizing:border-box;}
+/* The settings window opens inside the gear's band item; its buttons keep their own sizes. */
+#cc .band .cx-band-item button:not(.cx-settings-layer button){height:22px;box-sizing:border-box;}
 /* The band never carries a slot's waiting or vacancy text: it would push the window below. */
 #cc .cx-band-item>.cx-slot-empty,#cc .cx-band-item .cx-slot-failed{display:none;}
 #cc .cx-theme-slot{display:none;}
