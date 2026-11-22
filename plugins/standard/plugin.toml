@@ -7,7 +7,7 @@
 [plugin]
 id = "standard"
 name = "Mesh standard"
-version = "0.1.5"
+version = "0.1.6"
 description = "One mesh standard for every Cortex app: the members, the lock (standard.lock), the check of every member's copy against it, the handshake, and the Standard view."
 license = "UNLICENSED"
 platforms = ["macos", "linux"]

@@ -4,7 +4,7 @@
 [plugin]
 id = "chatflow-manage"
 name = "Manage flow"
-version = "0.1.13"
+version = "0.1.14"
 description = "The manager's chat flow: one model question per stage (assess, match, plan, validate, drift, converge, digest, why) and the answer to a person in a session (reply), each checked by the host, and the request's thread and composer."
 license = "UNLICENSED"
 platforms = ["macos", "linux"]
