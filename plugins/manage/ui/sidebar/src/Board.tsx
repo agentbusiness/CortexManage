@@ -136,7 +136,10 @@ export function BoardView({ now }: { now: number }) {
   const [page, setPage] = useSlotState<'board' | Table>('board.page', 'board');
   // The computer the flow pages show; empty: all of them.
   const [node, setNode] = useSlotState<string>('flow.node', '');
-  const flow = useFlow(page === 'board' ? null : page, only, node);
+  // Metrics flow shows the model calls, or the methods the apps served.
+  const [metrics, setMetrics] = useSlotState<'models' | 'calls'>('flow.metrics', 'models');
+  const table: Table | null = page === 'board' ? null : page === 'calls' ? metrics : page;
+  const flow = useFlow(table, only, node);
   const togglePage = (next: Table) => setPage(page === next ? 'board' : next);
   // Where a card was dropped, until the board's next answer says where its work is.
   const [placed, setPlaced] = useState<Record<string, Column>>({});
@@ -293,7 +296,7 @@ export function BoardView({ now }: { now: number }) {
       {act.failed('move') && <p className="inline-error cm-board-note">{act.failed('move')}</p>}
       {repos.error && !repos.data && <p className="inline-error cm-board-note">{loadFailure('The repositories', repos)}</p>}
       {board.error && !board.data && <p className="inline-error cm-board-note">{loadFailure('The requests', board)}</p>}
-      {page !== 'board' && <FlowPage table={page} flow={flow} openRequest={(request) => fold(setSelection, sessionOf(request))} />}
+      {table && <FlowPage table={table} flow={flow} openRequest={(request) => fold(setSelection, sessionOf(request))} onView={page === 'calls' ? setMetrics : undefined} />}
       {page === 'board' && repos.data && list.length === 0 && <p className="cm-line">No repository yet. Add one with Add repo.</p>}
       {page === 'board' && asks.length > 0 && (
         <div className="cm-needs">

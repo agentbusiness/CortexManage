@@ -104,6 +104,14 @@ pub async fn read(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcErr
                 continue;
             }
             let Some(Value::Object(mut row)) = kept.get("row").cloned() else { continue };
+            if table == tables::MODELS {
+                // One row is one call: its times as the other tables name theirs.
+                let started = row.get("started_at_ms").cloned().unwrap_or(Value::Null);
+                let ended = row.get("ended_at_ms").cloned().unwrap_or(Value::Null);
+                row.insert("first_at_ms".into(), started);
+                row.insert("last_at_ms".into(), ended);
+                row.insert("count".into(), json!(1));
+            }
             let at = row.get("first_at_ms").and_then(Value::as_i64).unwrap_or(entry.at_ms as i64);
             let day = day_of(at);
             let count = row.get("count").and_then(Value::as_u64).unwrap_or(1);
@@ -122,7 +130,12 @@ pub async fn read(manager: &Arc<Manager>, params: Value) -> Result<Value, RpcErr
             row.insert("app".into(), kept.get("software").cloned().unwrap_or(Value::Null));
             row.insert("app_version".into(), kept.get("version").cloned().unwrap_or(Value::Null));
             row.insert("node".into(), json!(node));
-            row.insert("computer".into(), json!(if machine.is_empty() { node.clone() } else { machine }));
+            let computer = if machine.is_empty() { node.clone() } else { machine };
+            // A model call no claim placed elsewhere ran on the sender's own computer.
+            if table == tables::MODELS && row.get("served_by").and_then(Value::as_str).unwrap_or_default().is_empty() {
+                row.insert("served_by".into(), json!(computer));
+            }
+            row.insert("computer".into(), json!(computer));
             rows.push(Value::Object(row));
         }
     }

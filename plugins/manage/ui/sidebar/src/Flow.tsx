@@ -3,14 +3,15 @@
  * (`manage.reports.read`), kept a week. One stack, the same for both: the kept days as the only
  * navigation, the figures, when it happened by the minute, the filters, and the rows themselves.
  * Every name is a filter; pick it again to drop it. The board's bar chooses the repository and the
- * computer.
+ * computer. Metrics flow shows the model calls (every one: model, tag, the computer that served it,
+ * tokens) or the methods the apps served.
  */
 
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { errorMessage, useClient, useQuery, type Client } from '@cortex/sdk';
 import { CHANGED, loadFailure } from './manage';
 
-export type Table = 'errors' | 'calls';
+export type Table = 'errors' | 'calls' | 'models';
 
 interface Day {
   date: string;
@@ -131,18 +132,21 @@ const ERROR_KINDS: Array<[string, string]> = [
 const kindField = (table: Table) => (table === 'errors' ? 'kind' : 'outcome');
 
 function kindLabel(table: Table, kind: string): string {
-  if (table === 'calls') return kind === 'ok' ? 'answered' : kind;
+  if (table !== 'errors') return kind === 'ok' ? 'answered' : kind;
   return ERROR_KINDS.find(([key]) => key === kind)?.[1] ?? kind;
 }
 
 function kindOrder(table: Table, kind: string): number {
-  if (table === 'calls') return kind === 'ok' ? 0 : 1;
+  if (table !== 'errors') return kind === 'ok' ? 0 : 1;
   const index = ERROR_KINDS.findIndex(([key]) => key === kind);
   return index === -1 ? ERROR_KINDS.length : index;
 }
 
 /** The class that gives a kind its colour (`flow.css`). */
-const kindClass = (table: Table, kind: string) => (table === 'calls' ? (kind === 'ok' ? 'cf-k-ok' : 'cf-k-failed') : `cf-k-${kind}`);
+const kindClass = (table: Table, kind: string) => (table !== 'errors' ? (kind === 'ok' ? 'cf-k-ok' : 'cf-k-failed') : `cf-k-${kind}`);
+
+/** What a table's rows count. */
+const unitOf = (table: Table) => (table === 'errors' ? 'failures' : table === 'models' ? 'model calls' : 'calls');
 
 // ---- the data -----------------------------------------------------------------------------------
 
@@ -176,6 +180,18 @@ const ERROR_FACETS: Array<[string, string]> = [
   ['computer', 'computer'],
 ];
 
+const MODEL_FACETS: Array<[string, string]> = [
+  ['model_id', 'model'],
+  ['tag', 'tag'],
+  ['served_by', 'served by'],
+  ['app', 'app'],
+  ['part', 'part'],
+  ['computer', 'asked from'],
+];
+
+/** A field's name where the page shows it. */
+const FIELD_LABELS: Record<string, string> = Object.fromEntries([...MODEL_FACETS, ['outcome', 'outcome']]);
+
 const CALL_FACETS: Array<[string, string]> = [
   ['outcome', 'outcome'],
   ['app', 'app'],
@@ -188,12 +204,12 @@ function filterRows(rows: Row[], filters: Filters): Row[] {
   return rows.filter((row) => Object.entries(filters).every(([field, value]) => value == null || str(row[field]) === value));
 }
 
-function facetValues(rows: Row[], field: string, table: Table): Array<{ value: string; count: number }> {
+function facetValues(rows: Row[], field: string, table: Table, weigh: (row: Row) => number = (row) => row.count): Array<{ value: string; count: number }> {
   const sums = new Map<string, number>();
   for (const row of rows) {
     const value = str(row[field]);
     if (!value) continue;
-    sums.set(value, (sums.get(value) ?? 0) + row.count);
+    sums.set(value, (sums.get(value) ?? 0) + weigh(row));
   }
   return [...sums.entries()]
     .map(([value, count]) => ({ value, count }))
@@ -202,7 +218,7 @@ function facetValues(rows: Row[], field: string, table: Table): Array<{ value: s
 
 // ---- the page -----------------------------------------------------------------------------------
 
-export function FlowPage({ table, flow, openRequest }: { table: Table; flow: Flow; openRequest: (request: RequestLink) => void }) {
+export function FlowPage({ table, flow, openRequest, onView }: { table: Table; flow: Flow; openRequest: (request: RequestLink) => void; onView?: ((table: 'models' | 'calls') => void) | undefined }) {
   const { answer, setSpan } = flow;
   const [filters, setFilters] = useState<Filters>({});
   const [open, setOpen] = useState<string | null>(null);
@@ -241,21 +257,28 @@ export function FlowPage({ table, flow, openRequest }: { table: Table; flow: Flo
     setFilters((current) => ({ ...current, [field]: current[field] === value ? null : value }));
   };
 
-  if (!data) {
-    if (answer.error) return <p className="inline-error cm-board-note">{loadFailure('The reports', answer)}</p>;
-    return <p className="cm-line">Reading the reports…</p>;
+  const views = onView && (
+    <div className="cm-flow-views">
+      <button type="button" className="detent" aria-pressed={table === 'models'} onClick={() => onView('models')}>Model calls</button>
+      <button type="button" className="detent" aria-pressed={table === 'calls'} onClick={() => onView('calls')}>Methods</button>
+    </div>
+  );
+  if (!data || data.table !== table) {
+    if (answer.error) return <div className="cm-flow">{views}<p className="inline-error cm-board-note">{loadFailure('The reports', answer)}</p></div>;
+    return <div className="cm-flow">{views}<p className="cm-line">Reading the reports…</p></div>;
   }
   // The answer is for the days asked; while another span loads, the last one stays.
   const rows = filterRows(data.rows, filters);
   const chips = Object.entries(filters).filter(([, value]) => value != null) as Array<[string, string]>;
   return (
     <div className="cm-flow" data-table={table}>
+      {views}
       <Days table={table} days={data.days} span={span!} onPick={pick} />
       {chips.length > 0 && (
         <div className="cm-flow-chain">
           {chips.map(([field, value]) => (
             <button key={field} type="button" className="detent" aria-pressed="true" onClick={() => toggle(field, value)}>
-              {field} · {field === kindField(table) ? kindLabel(table, value) : value} <span className="k">✕</span>
+              {(table === 'models' ? FIELD_LABELS[field] : undefined) ?? field} · {field === kindField(table) ? kindLabel(table, value) : value} <span className="k">✕</span>
             </button>
           ))}
         </div>
@@ -263,7 +286,9 @@ export function FlowPage({ table, flow, openRequest }: { table: Table; flow: Flo
       {table === 'errors'
         ? <ErrorBody rows={rows} all={data.rows} span={span!} filters={filters} toggle={toggle} open={open} setOpen={setOpen}
             requests={data.requests ?? {}} openRequest={openRequest} refresh={() => void answer.refresh()} />
-        : <CallBody rows={rows} all={data.rows} span={span!} filters={filters} toggle={toggle} open={open} setOpen={setOpen} />}
+        : table === 'models'
+          ? <ModelBody rows={rows} all={data.rows} span={span!} filters={filters} toggle={toggle} open={open} setOpen={setOpen} />
+          : <CallBody rows={rows} all={data.rows} span={span!} filters={filters} toggle={toggle} open={open} setOpen={setOpen} />}
     </div>
   );
 }
@@ -283,7 +308,7 @@ interface BodyProps {
 
 function Days({ table, days, span, onPick }: { table: Table; days: Day[]; span: Span; onPick: (date: string, extend: boolean) => void }) {
   const max = Math.max(1, ...days.map((day) => day.count));
-  const what = table === 'errors' ? 'failures' : 'calls';
+  const what = unitOf(table);
   return (
     <div className="cm-flow-days">
       <div className="cf-strip">
@@ -361,7 +386,7 @@ function Timeline({ table, rows, span, compact, onKind }: { table: Table; rows: 
   const ticks: number[] = [];
   const step = days === 1 ? 3 * 3_600_000 : days <= 3 ? 12 * 3_600_000 : DAY_MS;
   for (let t = from; t <= to; t += step) ticks.push(t);
-  const what = table === 'errors' ? 'failures' : 'calls';
+  const what = unitOf(table);
   return (
     <div className={`cm-flow-plot${compact ? ' cf-compact' : ''}`}>
       <span className="cf-max num">{fmtInt(max)}</span>
@@ -414,19 +439,19 @@ function Legend({ table, all, filters, toggle }: { table: Table; all: Row[]; fil
   );
 }
 
-function Facets({ table, facets, all, filters, toggle, unit }: { table: Table; facets: Array<[string, string]>; all: Row[]; filters: Filters; toggle: (field: string, value: string) => void; unit: string }) {
+function Facets({ table, facets, all, filters, toggle, unit, weigh, format = fmtInt }: { table: Table; facets: Array<[string, string]>; all: Row[]; filters: Filters; toggle: (field: string, value: string) => void; unit: string; weigh?: (row: Row) => number; format?: (n: number) => string }) {
   return (
     <div className="cm-flow-facets" style={{ gridTemplateColumns: `repeat(${facets.length}, minmax(0, 1fr))` }}>
       {facets.map(([field, label]) => (
         <div key={field} className="cf-rank">
           <h4><span className="ap">{label}</span><span className="ap faint">{unit}</span></h4>
-          {facetValues(all, field, table).map((entry) => (
+          {facetValues(all, field, table, weigh).map((entry) => (
             <button key={entry.value} type="button" className={`cf-row${filters[field] === entry.value ? ' cf-on' : ''}`} title={entry.value} onClick={() => toggle(field, entry.value)}>
               <span className="cf-n">
                 {field === kindField(table) && <i className={`cf-sw ${kindClass(table, entry.value)}`} />}
                 {field === kindField(table) ? kindLabel(table, entry.value) : entry.value}
               </span>
-              <span className="cf-c num">{fmtInt(entry.count)}</span>
+              <span className="cf-c num">{format(entry.count)}</span>
             </button>
           ))}
         </div>
@@ -828,6 +853,121 @@ function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
         {[...byComputer.entries()].sort((a, b) => b[1].calls - a[1].calls).map(([key, value]) => (
           <Fragment key={key}><span className="cf-k">{key}</span><span>{fmtInt(value.calls)} calls · mean {fmtUs(value.us / Math.max(1, value.calls))}</span></Fragment>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ---- Model calls --------------------------------------------------------------------------------
+
+/** Calls drawn in the table at most; the figures and filters count every one. */
+const SHOWN_CALLS = 500;
+
+const tokensOf = (row: Row) => num(row.prompt_tokens) + num(row.completion_tokens);
+
+function fmtMs(ms: number): string {
+  return fmtUs(ms * 1000);
+}
+
+/** The model as the row names it; a call no claim placed ran on the app's own model. */
+const modelOf = (row: Row) => str(row.model_id) || str(row.plugin) || 'own model';
+
+function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProps) {
+  const fig = useMemo(() => {
+    const f = { calls: 0, failed: 0, prompt: 0, cached: 0, completion: 0, reasoning: 0, wallMs: 0, decodeMs: 0, models: new Set<string>(), servers: new Set<string>() };
+    for (const row of rows) {
+      f.calls += 1;
+      if (row.outcome !== 'ok') f.failed += 1;
+      f.prompt += num(row.prompt_tokens);
+      f.cached += num(row.cached_tokens);
+      f.completion += num(row.completion_tokens);
+      f.reasoning += num(row.reasoning_tokens);
+      f.wallMs += num(row.wall_ms);
+      f.decodeMs += num(row.decode_ms);
+      f.models.add(modelOf(row));
+      if (row.served_by) f.servers.add(str(row.served_by));
+    }
+    return f;
+  }, [rows]);
+  const ordered = useMemo(() => [...rows].sort((a, b) => b.last_at_ms - a.last_at_ms), [rows]);
+  const shown = ordered.slice(0, SHOWN_CALLS);
+  const days = Math.round((dayStartMs(span.to) - dayStartMs(span.from)) / DAY_MS) + 1;
+  const filtered = Object.values(filters).some((value) => value != null);
+  return (
+    <>
+      <div className="cm-flow-figs">
+        <Fig label="Model calls" value={fmtInt(fig.calls)} keyed />
+        <Fig label="Tokens in" value={fmtTokens(fig.prompt)} note={`${fmtTokens(fig.cached)} cached`} />
+        <Fig label="Tokens out" value={fmtTokens(fig.completion)} note={fig.decodeMs ? `${(fig.completion / (fig.decodeMs / 1000)).toFixed(0)} tok/s` : undefined} />
+        <Fig label="Reasoning" value={fmtTokens(fig.reasoning)} note={fig.completion ? `${((100 * fig.reasoning) / fig.completion).toFixed(0)} % of out` : undefined} />
+        <Fig label="Models" value={fmtInt(fig.models.size)} note={[...fig.models].sort().join(', ')} />
+        <Fig label="Served by" value={fmtInt(fig.servers.size)} note={[...fig.servers].sort().join(', ')} />
+        <Fig label="Failed" value={fmtInt(fig.failed)} bad={fig.failed > 0} />
+        <Fig label="Mean time" value={fig.calls ? fmtMs(fig.wallMs / fig.calls) : '—'} note={`${fmtMs(fig.wallMs)} in all`} />
+        <Fig label="Days" value={fmtInt(days)} />
+      </div>
+      <Section title="When" count={fmtInt(rows.length)}>
+        <Timeline table="models" rows={rows} span={span} onKind={(kind) => toggle('outcome', kind)} />
+        <Legend table="models" all={all} filters={filters} toggle={toggle} />
+      </Section>
+      <Section title="Who spends">
+        <Facets table="models" facets={MODEL_FACETS} all={all} filters={filters} toggle={toggle} unit="tokens" weigh={tokensOf} format={fmtTokens} />
+      </Section>
+      <Section title="Calls" count={rows.length > SHOWN_CALLS ? `the last ${fmtInt(SHOWN_CALLS)} of ${fmtInt(rows.length)}` : fmtInt(rows.length)}>
+        {rows.length === 0 ? <p className="cm-flow-empty">No model was called in these days{filtered ? ' under these filters' : ''}.</p> : (
+          <div className="cm-flow-tbl-wrap">
+            <table className="tbl cm-flow-tbl">
+              <thead>
+                <tr><th>ended</th><th>model</th><th>tag</th><th>served by</th><th>app</th><th>part</th><th className="cf-r">in</th><th className="cf-r">cached</th><th className="cf-r">out</th><th className="cf-r">reasoning</th><th className="cf-r">time</th><th>finish</th></tr>
+              </thead>
+              <tbody>
+                {shown.map((row) => {
+                  const key = str(row.event_id);
+                  return (
+                    <Fragment key={key}>
+                      <tr className={`cf-rec${open === key ? ' cf-open' : ''}`} onClick={() => setOpen(open === key ? null : key)}>
+                        <td className="num cf-dim">{stamp(row.last_at_ms, span)}</td>
+                        <td className="cf-mono cf-clip" title={modelOf(row)}><i className={`cf-sw ${row.outcome === 'ok' ? 'cf-k-ok' : 'cf-k-failed'}`} />{modelOf(row)}</td>
+                        <td className="cf-dim">{str(row.tag) || '—'}</td>
+                        <td>{str(row.served_by)}{row.tier ? <span className="cf-dim"> · {str(row.tier)}</span> : null}</td>
+                        <td className="cf-dim">{str(row.app)}</td>
+                        <td className="cf-dim">{str(row.part)}</td>
+                        <td className="cf-r num">{fmtInt(num(row.prompt_tokens))}</td>
+                        <td className="cf-r num cf-dim">{fmtInt(num(row.cached_tokens))}</td>
+                        <td className="cf-r num">{fmtInt(num(row.completion_tokens))}</td>
+                        <td className="cf-r num cf-dim">{fmtInt(num(row.reasoning_tokens))}</td>
+                        <td className="cf-r num cf-dim">{fmtMs(num(row.wall_ms))}</td>
+                        <td className={row.outcome === 'ok' ? 'cf-dim' : 'cf-bad'}>{row.outcome === 'ok' ? str(row.finish) : str(row.outcome)}</td>
+                      </tr>
+                      {open === key && <tr><td colSpan={12} className="cf-detail-cell"><ModelDetail row={row} span={span} /></td></tr>}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+    </>
+  );
+}
+
+function ModelDetail({ row, span }: { row: Row; span: Span }) {
+  const decode = num(row.decode_ms);
+  const lines: Array<[string, string]> = [
+    ['model', `${modelOf(row)}${row.plugin && row.model_id ? ` · ${str(row.plugin)}` : ''}`],
+    ['tag', str(row.tag) || 'not claimed'],
+    ['served by', `${str(row.served_by)}${row.tier ? ` · ${str(row.tier)}` : ''}${row.served_node ? ` · ${str(row.served_node)}` : ''}`],
+    ['asked by', `${str(row.app)} ${str(row.app_version)} · ${str(row.part)} · ${str(row.computer)}`],
+    ['method', str(row.method)],
+    ['tokens', `${fmtInt(num(row.prompt_tokens))} in (${fmtInt(num(row.cached_tokens))} cached) · ${fmtInt(num(row.completion_tokens))} out (${fmtInt(num(row.reasoning_tokens))} reasoning)`],
+    ['times', `queue ${fmtMs(num(row.queue_ms))} · prefill ${fmtMs(num(row.prefill_ms))} · decode ${fmtMs(decode)}${decode ? ` (${(num(row.completion_tokens) / (decode / 1000)).toFixed(0)} tok/s)` : ''} · in all ${fmtMs(num(row.wall_ms))}`],
+    ['ended', `${stamp(row.last_at_ms, span)} UTC · ${row.outcome === 'ok' ? str(row.finish) : str(row.outcome)}`],
+  ];
+  return (
+    <div className="cm-flow-detail">
+      <div className="cf-kv">
+        {lines.map(([key, value]) => <Fragment key={key}><span className="cf-k">{key}</span><span>{value}</span></Fragment>)}
       </div>
     </div>
   );

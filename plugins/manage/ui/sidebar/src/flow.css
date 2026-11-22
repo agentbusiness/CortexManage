@@ -30,6 +30,9 @@
 #cc .cm-flow-days .cf-lbl{font-size:11px;color:var(--ink-3);}
 #cc .cm-flow-days .cf-sel .cf-lbl{color:var(--rubric);}
 
+/* Model calls or Methods */
+#cc .cm-flow-views{display:flex;gap:6px;padding:14px 0 0;}
+
 /* the filters in force */
 #cc .cm-flow-chain{display:flex;flex-wrap:wrap;gap:6px;padding:12px 0 0;}
 
