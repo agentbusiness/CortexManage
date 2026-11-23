@@ -1,12 +1,12 @@
 /**
  * Error flow and Metrics flow: what the apps of the managed repositories reported about themselves
  * (`manage.reports.read`), kept a week. One stack, the same for both: the kept days as the only
- * navigation, the figures, when it happened by the five minutes, the filters, and the rows
+ * navigation, the figures, when it happened, the filters, and the rows
  * themselves. Every name is a filter; pick it again to drop it. The board's bar chooses the
  * repository and the computer. Error flow shows errors and panics (the apps never send warnings)
- * and the call sites that flooded a log. Metrics flow shows the model calls (summed per five
- * minutes by model, tag, the computer that served them and outcome) or the methods the apps served
- * (summed per five minutes).
+ * and the call sites that flooded a log. Metrics flow shows the model calls (summed per hour by
+ * model, tag, the computer that served them and outcome) or the methods the apps served (summed
+ * per hour; rows sent before the hourly change sum five minutes).
  */
 
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -852,7 +852,7 @@ function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
         <span className="cf-k">method</span><span>{entry.method}</span>
         <span className="cf-k">app</span><span>{entry.app} · {entry.part}</span>
         <span className="cf-k">outcomes</span><span>{outcomes.map(([outcome, n]) => `${kindLabel('calls', outcome)} ${fmtInt(n)}`).join(' · ')}</span>
-        <span className="cf-k">served</span><span>{fmtInt(entry.calls)} times in {fmtInt(entry.rows.length)} five-minute windows, the last at {stamp(entry.last, span)} UTC</span>
+        <span className="cf-k">served</span><span>{fmtInt(entry.calls)} times in {fmtInt(entry.rows.length)} summed rows, the last at {stamp(entry.last, span)} UTC</span>
         {(entry.prompt > 0 || entry.completion > 0) && <><span className="cf-k">tokens</span><span>{fmtInt(entry.prompt)} in ({fmtInt(entry.cached)} cached) · {fmtInt(entry.completion)} out</span></>}
       </div>
       <Timeline table="calls" rows={entry.rows} span={span} compact />
@@ -868,7 +868,7 @@ function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
 
 // ---- Model calls --------------------------------------------------------------------------------
 
-/** Rows (one model's calls of five minutes) drawn in the table at most; the figures and filters
+/** Rows (one model's calls of one hour) drawn in the table at most; the figures and filters
  * count every one. */
 const SHOWN_ROWS = 500;
 
@@ -925,7 +925,7 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
       <Section title="Who spends">
         <Facets table="models" facets={MODEL_FACETS} all={all} filters={filters} toggle={toggle} unit="tokens" weigh={tokensOf} format={fmtTokens} />
       </Section>
-      <Section title="Calls by five minutes" count={rows.length > SHOWN_ROWS ? `the last ${fmtInt(SHOWN_ROWS)} of ${fmtInt(rows.length)}` : fmtInt(rows.length)}>
+      <Section title="Calls by hour" count={rows.length > SHOWN_ROWS ? `the last ${fmtInt(SHOWN_ROWS)} of ${fmtInt(rows.length)}` : fmtInt(rows.length)}>
         {rows.length === 0 ? <p className="cm-flow-empty">No model was called in these days{filtered ? ' under these filters' : ''}.</p> : (
           <div className="cm-flow-tbl-wrap">
             <table className="tbl cm-flow-tbl">
@@ -976,7 +976,7 @@ function ModelDetail({ row, span }: { row: Row; span: Span }) {
     ['served by', `${str(row.served_by)}${row.tier ? ` · ${str(row.tier)}` : ''}${row.served_node ? ` · ${str(row.served_node)}` : ''}`],
     ['asked by', `${str(row.app)} ${str(row.app_version)} · ${str(row.part)} · ${str(row.computer)}`],
     ['method', str(row.method)],
-    ['calls', `${fmtInt(calls)} in these five minutes`],
+    ['calls', `${fmtInt(calls)} in this ${num(row.window_ms) > 300_000 ? 'hour' : 'five minutes'}`],
     ['tokens', `${fmtInt(num(row.prompt_tokens))} in (${fmtInt(num(row.cached_tokens))} cached) · ${fmtInt(num(row.completion_tokens))} out (${fmtInt(num(row.reasoning_tokens))} reasoning)`],
     ['mean times', `queue ${mean('queue_ms')} · prefill ${mean('prefill_ms')} · decode ${mean('decode_ms')}${decode ? ` (${(num(row.completion_tokens) / (decode / 1000)).toFixed(0)} tok/s)` : ''} · in all ${mean('wall_ms')}, the longest ${fmtMs(num(row.max_wall_ms))}`],
     ['between', `${stamp(row.first_at_ms, span)} – ${stamp(row.last_at_ms, span)} UTC · ${row.outcome === 'ok' ? str(row.finish) : str(row.outcome)}`],

@@ -782,9 +782,9 @@ impl Manager {
         self.open_request(params, from, None).await
     }
 
-    /// Open a request and start its flow; `report` is the failure an app reported (its
-    /// fingerprint, how often and when last it was seen).
-    pub(crate) async fn open_request(self: &Arc<Self>, params: RequestCreateParams, from: From, report: Option<(String, u64, u64)>) -> Result<Value, RpcError> {
+    /// Open a request and start its flow; `report` is the fingerprint of the failure an app
+    /// reported.
+    pub(crate) async fn open_request(self: &Arc<Self>, params: RequestCreateParams, from: From, report: Option<String>) -> Result<Value, RpcError> {
         let said = params.text.trim().to_owned();
         if said.is_empty() && params.attachments.is_empty() {
             return Err(RpcError::invalid_params("a request needs a text: what should change"));
@@ -819,7 +819,7 @@ impl Manager {
             })
             .await?;
         let id = self.store.next_request_id(&repo.repo.id).ok_or_else(|| RpcError::not_found(format!("no repository `{}`", params.repo)))?;
-        let (fingerprint, seen, seen_last_ms) = report.unwrap_or_default();
+        let fingerprint = report.unwrap_or_default();
         let now = now_ms();
         let rec = ReqRec {
             r: Request {
@@ -833,8 +833,6 @@ impl Manager {
                 created_ms: now,
                 updated_ms: now,
                 fingerprint,
-                seen,
-                seen_last_ms,
                 ..Request::default()
             },
             stages: vec![(stage::ARRIVED.into(), now)],

@@ -321,7 +321,7 @@ fn day_of(ms: i64) -> String {
     chrono::DateTime::from_timestamp_millis(ms).map(|at| at.format("%Y-%m-%d").to_string()).unwrap_or_default()
 }
 
-/// One failure: counted on the open request of its fingerprint, or a new request.
+/// One failure: a new request, unless one of its fingerprint is open (the kept rows count it).
 async fn failure(manager: &Arc<Manager>, repo: &RepoRec, sender: &Sender, record: ErrorRecord) {
     let open: Option<String> = manager.store.read(|data| {
         data.requests
@@ -329,13 +329,7 @@ async fn failure(manager: &Arc<Manager>, repo: &RepoRec, sender: &Sender, record
             .find(|rec| rec.r.repo == repo.repo.id && rec.r.ended_as.is_empty() && rec.r.fingerprint == record.fingerprint)
             .map(|rec| rec.r.id.clone())
     });
-    let last = record.last_at_ms.max(0) as u64;
-    if let Some(id) = open {
-        manager.store.update_request(&id, |rec| {
-            rec.r.seen = rec.r.seen.saturating_add(record.count);
-            rec.r.seen_last_ms = rec.r.seen_last_ms.max(last);
-        });
-        manager.changed("request", &id, &repo.repo.id);
+    if open.is_some() {
         return;
     }
     let text = text(manager, sender, &record);
@@ -346,7 +340,7 @@ async fn failure(manager: &Arc<Manager>, repo: &RepoRec, sender: &Sender, record
         node: sender.machine.node.clone(),
     };
     let params = RequestCreateParams { repo: repo.repo.id.clone(), text, title, ..RequestCreateParams::default() };
-    if let Err(error) = manager.open_request(params, from, Some((record.fingerprint.clone(), record.count, last))).await {
+    if let Err(error) = manager.open_request(params, from, Some(record.fingerprint.clone())).await {
         tracing::warn!(repo = %repo.repo.id, error = %error.message, "a reported failure could not become a request");
     }
 }

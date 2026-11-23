@@ -545,15 +545,10 @@ pub struct Request {
     pub created_ms: u64,
     #[serde(default)]
     pub updated_ms: u64,
-    /// For a request an app reported (an error, a panic): the failure's fingerprint, how many
-    /// times it was seen, and when last. A report of the same fingerprint while the request is
-    /// open is counted here.
+    /// For a request an app reported (an error, a panic): the failure's fingerprint. Its repeats
+    /// are the kept report rows of that fingerprint, not counted here.
     #[serde(default)]
     pub fingerprint: String,
-    #[serde(default)]
-    pub seen: u64,
-    #[serde(default)]
-    pub seen_last_ms: u64,
     /// The request this one follows (reopened after its work landed).
     #[serde(default)]
     pub follows: String,
