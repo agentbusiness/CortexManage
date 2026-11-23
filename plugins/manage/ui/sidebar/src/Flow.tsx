@@ -4,9 +4,10 @@
  * navigation, the figures, when it happened, the filters, and the rows
  * themselves. Every name is a filter; pick it again to drop it. The board's bar chooses the
  * repository and the computer. Error flow shows errors and panics (the apps never send warnings)
- * and the call sites that flooded a log. Metrics flow shows the model calls (summed per hour by
- * model, tag, the computer that served them and outcome) or the methods the apps served (summed
- * per hour; rows sent before the hourly change sum five minutes).
+ * and the call sites that flooded a log. Metrics flow shows the model calls (summed per five
+ * minutes by model, tag, the computer that served them and outcome; rows sent by an app between
+ * the two changes sum an hour) or the methods the apps served (summed per hour; rows sent before
+ * the hourly change sum five minutes).
  */
 
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -868,7 +869,7 @@ function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
 
 // ---- Model calls --------------------------------------------------------------------------------
 
-/** Rows (one model's calls of one hour) drawn in the table at most; the figures and filters
+/** Rows (one model's calls of five minutes) drawn in the table at most; the figures and filters
  * count every one. */
 const SHOWN_ROWS = 500;
 
@@ -925,7 +926,7 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
       <Section title="Who spends">
         <Facets table="models" facets={MODEL_FACETS} all={all} filters={filters} toggle={toggle} unit="tokens" weigh={tokensOf} format={fmtTokens} />
       </Section>
-      <Section title="Calls by hour" count={rows.length > SHOWN_ROWS ? `the last ${fmtInt(SHOWN_ROWS)} of ${fmtInt(rows.length)}` : fmtInt(rows.length)}>
+      <Section title="Calls by five minutes" count={rows.length > SHOWN_ROWS ? `the last ${fmtInt(SHOWN_ROWS)} of ${fmtInt(rows.length)}` : fmtInt(rows.length)}>
         {rows.length === 0 ? <p className="cm-flow-empty">No model was called in these days{filtered ? ' under these filters' : ''}.</p> : (
           <div className="cm-flow-tbl-wrap">
             <table className="tbl cm-flow-tbl">
