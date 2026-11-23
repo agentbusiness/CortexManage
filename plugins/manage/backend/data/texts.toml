@@ -43,6 +43,8 @@ replan_refused = "The builder's new plan was refused: not every new task may be 
 # ---- tier reasons, one plain sentence each -------------------------------------------------------
 reason_model = "The assessment proposed {tier}: {because}"
 reason_no_plan = "There is no plan yet, so no paths raise the tier."
+because_reported = "An app reported this failure; a report says what went wrong, not what the fix changes."
+urgent_reported = "An app reported this failure while people use it."
 
 # ---- the manager's short lines in a request's thread ----------------------------------------------
 line_clarify = "I need a few answers before I can plan this."

@@ -184,6 +184,9 @@ pub fn again(manager: &Arc<Manager>, id: &str, text: &str, add: bool) {
     let updated = manager.store.update_request(id, |rec| {
         if add && !text.is_empty() {
             rec.r.text = format!("{}\n\n{}", rec.r.text.trim_end(), text);
+            if !rec.r.fingerprint.is_empty() {
+                rec.added = format!("{}\n\n{}", rec.added.trim_end(), text).trim().to_owned();
+            }
         }
         rec.plan_note = text.to_owned();
         rec.r.questions.clear();
@@ -259,25 +262,36 @@ async fn assess(manager: &Arc<Manager>, rec: &ReqRec, run: u64) -> bool {
         let asked: Vec<String> = questions.iter().map(|question| question.text.clone()).collect();
         manager.note(&session, &manager.t("note_open_questions", &[("questions", &asked.join(" "))])).await;
     }
+    // A request an app reported (it declares the failure's fingerprint) is a failure happening in
+    // a released app: a fix, and urgent. Its text says what went wrong, not what the fix changes,
+    // so a sentence of the report never makes it major; only what a person wrote to it since can.
+    let reported = !rec.r.fingerprint.is_empty();
     // The model's sentence for "urgent" must be in the request; one that is not counts as no.
     let quoted = !answer.urgent_because.trim().is_empty() && plain(&rec.r.text).contains(&plain(&answer.urgent_because));
     // Major stops and asks a person, so it needs its sentence in the request too; without one the
     // model's major counts as minor.
-    let major = answer.tier == Tier::Major && !answer.major_because.trim().is_empty() && plain(&rec.r.text).contains(&plain(&answer.major_because));
+    let major_source = if reported { rec.added.as_str() } else { rec.r.text.as_str() };
+    let major = answer.tier == Tier::Major && !answer.major_because.trim().is_empty() && plain(major_source).contains(&plain(&answer.major_because));
     let tier_model = if answer.tier == Tier::Major && !major { Tier::Minor } else { answer.tier };
-    let tier_because = if major { answer.major_because.trim() } else { answer.because.trim() };
+    let tier_because = if major { answer.major_because.trim().to_owned() } else if reported { manager.t("because_reported", &[]) } else { answer.because.trim().to_owned() };
+    let tier_because = tier_because.as_str();
+    let (kind, urgent_model, urgent_because) = if reported {
+        ("fix".to_owned(), true, manager.t("urgent_reported", &[]))
+    } else {
+        (answer.kind.trim().to_lowercase(), answer.urgent && quoted, if quoted { answer.urgent_because.trim().to_owned() } else { String::new() })
+    };
     let new_title = (rec.title_auto && !answer.title.trim().is_empty()).then(|| answer.title.trim().to_owned());
     let model_reason = manager.t("reason_model", &[("tier", tier_model.as_str()), ("because", tier_because)]);
     let floor_reason = manager.t("reason_no_plan", &[]);
     let Some(updated) = manager.store.update_request(id, |rec| {
-        rec.r.kind = answer.kind.trim().to_lowercase();
+        rec.r.kind = kind.clone();
         rec.r.surface = answer.surface.clone();
         rec.tier_model = tier_model;
         rec.because = tier_because.to_owned();
         // Before there is a plan there are no paths to judge by: the floor is safe.
         rec.r.tier_floor = Tier::Safe;
-        rec.urgent_model = answer.urgent && quoted;
-        rec.r.urgent_because = if quoted { answer.urgent_because.trim().to_owned() } else { String::new() };
+        rec.urgent_model = urgent_model;
+        rec.r.urgent_because = urgent_because.clone();
         rec.r.tier_reasons = vec![model_reason.clone(), floor_reason.clone()];
         rec.r.questions.clear();
         if let Some(title) = &new_title {

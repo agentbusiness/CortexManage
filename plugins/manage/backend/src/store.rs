@@ -80,6 +80,9 @@ pub struct ReqRec {
     pub reopened: bool,
     /// The commit message its work lands with (written when its package passed its gates).
     pub commit_message: String,
+    /// For a request an app reported: what a person wrote to it since. The report says what went
+    /// wrong, never what the fix changes, so only these words can make it major.
+    pub added: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -353,6 +356,7 @@ fn request_props(rec: &ReqRec) -> Map<String, Value> {
         ("parts", list(&r.parts)),
         ("fingerprint", json!(r.fingerprint)),
         ("plan_note", json!(rec.plan_note)),
+        ("added", json!(rec.added)),
         ("created_ms", json!(r.created_ms)),
         ("updated_ms", json!(r.updated_ms)),
     ])
@@ -404,6 +408,7 @@ fn request_from(p: &Map<String, Value>) -> ReqRec {
         hidden: graph::flag(p, "hidden"),
         reopened: graph::flag(p, "reopened"),
         commit_message: graph::text(p, "commit_message"),
+        added: graph::text(p, "added"),
     }
 }
 
