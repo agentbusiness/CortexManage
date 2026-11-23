@@ -7,7 +7,7 @@
 [plugin]
 id = "release-train"
 name = "Release train"
-version = "0.1.10"
+version = "0.1.11"
 description = "Soak and the release train: a landed package soaks in your own apps, the daily train releases what finished its soak without a report, writes the release note, and a released package can be taken back."
 license = "UNLICENSED"
 platforms = ["macos", "linux"]
