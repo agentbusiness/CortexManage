@@ -42,6 +42,12 @@ ubatch = 2048           # prompt tokens read per step
 kv_type = "f16"         # "q8_0" only where flash attention works (checked once, falls back to f16)
 idle_unload_s = 600     # unload Gemma after this long without a request
 
+# The machines this engine is the default for (the frame picks it when the person chose none):
+# every one. A home that still has an engine from before (it stays installed, on standby) starts
+# this one.
+[backend.machine]
+min_memory_bytes = 0
+
 # UI packages: one npm workspace rooted at ui/ (own package-lock.json); each package builds
 # <dir>/dist with manifest.json {id, version, slot, entry, css}, which the frame serves.
 [ui]
