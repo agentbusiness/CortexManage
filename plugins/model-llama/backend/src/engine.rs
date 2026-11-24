@@ -429,7 +429,9 @@ impl Engine {
         // `ctx_needed`: what one call of this app needs from whoever serves the office model, the
         // one 32k share every slot of the shared pool holds (not the whole pool); a longer
         // conversation books more shares through its claim.
-        let mut extra = json!({"source": source, "holder": holder, "tier": self.spec().tier, "state": self.state(), "memory_bytes": self.memory, "ctx_needed": 32_768});
+        // `configured_variant`: the weights this plugin is set to run (the config's, else the one for
+        // this machine's memory), so the settings panel does not mistake them for a test instance.
+        let mut extra = json!({"source": source, "holder": holder, "tier": self.spec().tier, "state": self.state(), "memory_bytes": self.memory, "ctx_needed": 32_768, "configured_variant": self.spec().id});
         if let Some(progress) = self.install_progress() {
             extra["install"] = serde_json::to_value(progress).unwrap_or(Value::Null);
         }

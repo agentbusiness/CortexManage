@@ -193,9 +193,10 @@ async fn serve(cli: Cli, config: Config, home: Home) -> Result<(), String> {
     let state = state::StateStore::open(outbox, home.state().join("records.json"));
     // The app's prebuilt plugins: a version this home has not taken from the app yet is installed.
     let bundled = config.packages.as_deref().map(|packages| units::queue_bundled(&home.plugins(), packages)).unwrap_or_default();
-    // A plugin the app dropped (a model engine replaced by another) does not serve beside its replacement.
+    // A plugin the app dropped (a model engine replaced by another) is retired: it neither serves
+    // beside its replacement nor stays listed.
     if let Some(packages) = config.packages.as_deref() {
-        units::set_aside_unbundled(&home.plugins(), packages);
+        units::retire_unbundled(&home.plugins(), packages);
     }
     let units = units::Units::load(&home.plugins(), &home.state(), config.overrides.clone(), machine.memory_bytes).map_err(|e| format!("plugins: {e}"))?;
     units::mark_bundled(&home.plugins(), &bundled);
