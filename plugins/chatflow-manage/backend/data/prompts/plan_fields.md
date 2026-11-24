@@ -3,10 +3,10 @@ id: plan_fields
 ---
 Fill the plan's fields in this order:
 
-1. `analysis`: your thinking, a dozen short lines at most, no code: what must be true when the work is done (every behaviour, value, error and limit the request states, in its words); the order to build it in; how each part is shown to work; what is unknown and how to find out.
+1. `analysis`: your thinking, six short lines at most, no code: what must be true when the work is done (every behaviour, value, error and limit the request states, in its words); the order to build it in; how each part is shown to work; what is unknown and how to find out.
 2. `goal`: what the finished work achieves, in one or two sentences.
 3. `approach`: how, and why this way.
-4. `architecture`: the parts, data and interfaces it adds or changes, by their names in the repository. Empty unless the line about this change's size asks for a design note.
+4. `architecture`: the parts, data and interfaces it adds or changes, by their names in the repository. Empty unless the line about this change's size, right before the step, asks for a design note.
 5. `risks`: what could go wrong or is unknown, each with how to find out.
 6. `tasks`: one task per part that can be built and checked on its own: a new file or module, a function or a small group of functions, a command, an option. A task is small: one part, its few rules, its own files. A request with one such part is one task. Two tasks that change the same file depend on each other. A task changes code: never a task only to verify, test or review. Only what the request asks: name anything more in `note` instead. Existing names stay: a task builds on the functions, types and files that are there. For each task:
    - `title`: a few words naming what it makes happen ("Retry failed uploads"), never only a function's name and never the method.

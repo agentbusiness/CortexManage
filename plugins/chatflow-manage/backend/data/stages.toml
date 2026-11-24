@@ -5,10 +5,11 @@
 # Every stage is one question in a new context. A stage with a schema runs without thinking: the
 # grammar holds the whole generation, so a thinking block would take the decision's place.
 
-label = "chatflow-manage-data 1"
+label = "chatflow-manage-data 2"
 
 # Greedy: the same question decides the same way, and four-bit weights garble sampled JSON first.
-# No presence penalty: a penalty switches the engine's speculative decoding off.
+# No presence penalty: the grammar bounds every answer, and a penalty would push a copied quote
+# away from the words it must copy.
 [sampling.decision]
 temperature = 0.0
 top_p = 1.0
@@ -21,12 +22,15 @@ presence_penalty = 0.0
 plan_tool_calls = 12
 # Tool calls learning how a repository ships may make.
 delivery_tool_calls = 16
+# The office model (Gemma 4 E4B) gives each call one 32k-token share of its pool, so a stage's
+# whole question and answer fit in 32k: the reading loops (12 or 16 results) and the plan's
+# question (12 results and its answer) are sized for that.
 # Most characters of one tool result the model is shown while it looks around (head and tail).
-tool_result_chars = 6000
+tool_result_chars = 4000
 # Most characters of one tool result carried into the plan's own question (twelve of them must fit).
-plan_evidence_chars = 3500
-# The task numbers the plan's grammar can name (the grammar needs a list; it is not a size
-# rule: a plan has as many tasks as the work needs, up to this many).
+plan_evidence_chars = 2500
+# The task numbers the plan's grammar can name (the grammar needs a list). The schema's own
+# `maxItems` (12) is the smaller and wins.
 plan_max_tasks = 40
 # Most characters of a diff DRIFT and CONVERGE are shown.
 diff_chars = 60000
@@ -36,63 +40,62 @@ search_hits = 20
 # A call the model plugin refused (restarting, swapping, busy) is tried again for this long (seconds).
 refused_window_s = 600
 
-# tag: the model the stage claims on the mesh. A stronger model under another tag would help
-# VALIDATE and DRIFT most: change their tag here.
+# tag: the model the stage claims on the mesh: `office`, the Gemma. A stronger model under another
+# tag would help PLAN, VALIDATE and DRIFT most: change their tag here.
 [stage.ASSESS]
-tag = "coding"
+tag = "office"
 prompts = ["assess"]
 schema = "assess"
 sampling = "decision"
 max_tokens = 900
 
 [stage.MATCH]
-tag = "coding"
+tag = "office"
 prompts = ["match"]
 schema = "match"
 sampling = "decision"
 max_tokens = 200
 
-# PLAN's reading before the plan: the only call that is offered tools (read, search, tree). Its
-# steps think a little, because choosing what to read next is not a schema.
+# PLAN's reading before the plan: the only call that is offered tools (read, search, tree). No
+# thinking: choosing the next read needs none, and a thought cut off at its budget loses the call.
 [stage.DISCOVER]
-tag = "coding"
+tag = "office"
 prompts = ["discover"]
 sampling = "decision"
 max_tokens = 400
-effort = "low"
-think_tokens = 512
+effort = "none"
 
 [stage.PLAN]
-tag = "coding"
+tag = "office"
 prompts = ["plan", "plan_fields"]
 schema = "plan"
 sampling = "decision"
-max_tokens = 16000
+max_tokens = 8000
 
 [stage.VALIDATE]
-tag = "coding"
+tag = "office"
 prompts = ["validate"]
 schema = "validate"
 sampling = "decision"
 max_tokens = 300
 
 [stage.DRIFT]
-tag = "coding"
+tag = "office"
 prompts = ["drift"]
 schema = "drift"
 sampling = "decision"
 max_tokens = 250
 
 [stage.CONVERGE]
-tag = "coding"
+tag = "office"
 prompts = ["converge"]
 schema = "converge"
 sampling = "decision"
-max_tokens = 1500
+max_tokens = 2500
 
 # The only free writing; nothing is decided from it.
 [stage.DIGEST]
-tag = "coding"
+tag = "office"
 prompts = ["digest"]
 sampling = "decision"
 max_tokens = 160
@@ -100,13 +103,13 @@ max_tokens = 160
 # What the manager says back when a person writes in a session. Free writing; nothing is decided
 # from it.
 [stage.REPLY]
-tag = "coding"
+tag = "office"
 prompts = ["reply"]
 sampling = "decision"
 max_tokens = 220
 
 [stage.WHY]
-tag = "coding"
+tag = "office"
 prompts = ["why"]
 schema = "why"
 sampling = "decision"
@@ -115,15 +118,14 @@ max_tokens = 400
 # How a repository ships. First a short reading loop with the read-only tools, on the repository's
 # main branch on GitHub; then one schema-bound question that writes each value with where it is.
 [stage.DELIVERY_READ]
-tag = "coding"
+tag = "office"
 prompts = ["delivery_read"]
 sampling = "decision"
 max_tokens = 400
-effort = "low"
-think_tokens = 512
+effort = "none"
 
 [stage.DELIVERY]
-tag = "coding"
+tag = "office"
 prompts = ["delivery"]
 schema = "delivery"
 sampling = "decision"
@@ -131,13 +133,13 @@ max_tokens = 6000
 
 # A commit's message. Free writing that code then checks (a first line, at most 72 characters).
 [stage.COMMIT]
-tag = "coding"
+tag = "office"
 prompts = ["commit"]
 sampling = "decision"
 max_tokens = 300
 
 [stage.RULES]
-tag = "coding"
+tag = "office"
 prompts = ["rules"]
 schema = "rules"
 sampling = "decision"

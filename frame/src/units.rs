@@ -1603,6 +1603,40 @@ pub fn bundled(packages: Option<&Path>) -> cc_protocol::contracts::frame::Bundle
 
 /// Record the app versions that installed (a failed install is queued again at the next start).
 /// Installed means current: a refused install has unpacked its folder all the same.
+/// Set aside (`.disabled`) each plugin this home once took from the app (it has a `.bundled`
+/// record) whose package the app no longer carries: the app dropped it for another (a model
+/// engine replaced by another one), so it does not serve beside or before its replacement. It
+/// stays installed; enabling it again is the person's choice. Returns the plugins set aside.
+pub fn set_aside_unbundled(root: &Path, packages: &Path) -> Vec<String> {
+    let mut set_aside = Vec::new();
+    let Ok(entries) = std::fs::read_dir(packages) else { return set_aside };
+    let carried: BTreeSet<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().to_string_lossy().strip_suffix(".ccplugin").and_then(|stem| stem.split_once('@')).map(|(id, _)| id.to_owned()))
+        .collect();
+    // An empty or unreadable folder says nothing about what the app dropped.
+    if carried.is_empty() {
+        return set_aside;
+    }
+    let Ok(entries) = std::fs::read_dir(root) else { return set_aside };
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        let dir = entry.path();
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if id.starts_with('.') || !dir.join(BUNDLED).exists() || dir.join(DISABLED).exists() || carried.contains(&id) {
+            continue;
+        }
+        let written = write_record(&dir, DISABLED, Some("")).and_then(|()| write_record(&dir, CHOSEN, None));
+        match written {
+            Ok(()) => {
+                tracing::info!(plugin = %id, "the app no longer carries this plugin; it is set aside");
+                set_aside.push(id);
+            }
+            Err(error) => tracing::warn!(plugin = %id, %error, "cannot set aside a plugin the app no longer carries"),
+        }
+    }
+    set_aside
+}
+
 pub fn mark_bundled(root: &Path, queued: &[(String, String)]) {
     for (id, version) in queued {
         let current = std::fs::read_to_string(root.join(id).join(CURRENT)).map(|text| text.trim().to_owned()).unwrap_or_default();

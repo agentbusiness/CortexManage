@@ -1,1 +1,0 @@
-pub const ATTENTION_TWO_PASS_SIMDGROUPS: u32 = 8;

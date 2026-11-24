@@ -13,7 +13,7 @@
           },
           "why": {
             "type": "string",
-            "maxLength": 240
+            "maxLength": 160
           }
         },
         "required": [
@@ -36,7 +36,7 @@
           },
           "why": {
             "type": "string",
-            "maxLength": 240
+            "maxLength": 160
           }
         },
         "required": [

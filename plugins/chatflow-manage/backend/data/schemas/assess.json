@@ -3,7 +3,7 @@
   "properties": {
     "because": {
       "type": "string",
-      "maxLength": 400
+      "maxLength": 600
     },
     "kind": {
       "enum": [
@@ -32,6 +32,10 @@
       },
       "maxItems": 3
     },
+    "major_because": {
+      "type": "string",
+      "maxLength": 600
+    },
     "tier": {
       "enum": [
         "safe",
@@ -39,16 +43,9 @@
         "major"
       ]
     },
-    "major_because": {
-      "type": "string",
-      "maxLength": 400
-    },
     "urgent_because": {
       "type": "string",
-      "maxLength": 400
-    },
-    "urgent": {
-      "type": "boolean"
+      "maxLength": 600
     },
     "questions": {
       "type": "array",
@@ -80,9 +77,6 @@
       },
       "maxItems": 3
     },
-    "actionable": {
-      "type": "boolean"
-    },
     "title": {
       "type": "string",
       "maxLength": 80
@@ -92,12 +86,10 @@
     "because",
     "kind",
     "surface",
-    "tier",
     "major_because",
+    "tier",
     "urgent_because",
-    "urgent",
     "questions",
-    "actionable",
     "title"
   ],
   "additionalProperties": false

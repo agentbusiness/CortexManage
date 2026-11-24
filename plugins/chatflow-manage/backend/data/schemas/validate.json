@@ -13,20 +13,9 @@
     "provable": {
       "type": "boolean"
     },
-    "standard_safe": {
-      "type": "boolean"
-    },
     "reason": {
       "type": "string",
       "maxLength": 300
-    },
-    "verdict": {
-      "enum": [
-        "keep",
-        "cut",
-        "merge",
-        "ask"
-      ]
     }
   },
   "required": [
@@ -34,9 +23,7 @@
     "sensible",
     "fits",
     "provable",
-    "standard_safe",
-    "reason",
-    "verdict"
+    "reason"
   ],
   "additionalProperties": false
 }

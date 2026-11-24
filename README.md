@@ -62,9 +62,10 @@ Everything it keeps is in a local graph. Secrets stay in the Keychain.
 
 ## The model
 
-CortexManage uses the shared **Qwen** coding model of your mesh, the same one CortexCode uses. It
-claims the model in the background, so a person's turn in another app always goes first. It never
-loads a second copy.
+CortexManage's own questions (rating, planning, checking) go to the shared **Gemma** office model
+of your mesh, the one CortexTerm uses; it carries Gemma itself and uses another app's copy on the
+same computer instead of loading a second. Building is CortexCode's, on its Qwen coding model. Model
+calls are claimed in the background, so a person's turn in another app always goes first.
 
 ## Who it is for
 
@@ -74,7 +75,7 @@ loads a second copy.
 ## Requirements
 
 - A Mac with Apple silicon.
-- A running CortexCode, and a GPU on your mesh with its coding model.
+- A running CortexCode, and a GPU on your mesh with its coding model, to build.
 
 ## Install
 

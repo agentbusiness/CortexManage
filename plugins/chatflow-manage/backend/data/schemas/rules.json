@@ -1,12 +1,32 @@
 {
   "type": "object",
   "properties": {
-    "file": { "type": "string", "maxLength": 200 },
-    "quote": { "type": "string", "maxLength": 200 },
-    "rule": { "type": "string", "maxLength": 300 },
-    "reason": { "type": "string", "maxLength": 300 },
-    "breaks": { "type": "boolean" }
+    "rule": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "file": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "quote": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "breaks": {
+      "type": "boolean"
+    }
   },
-  "required": ["file", "quote", "rule", "reason", "breaks"],
+  "required": [
+    "rule",
+    "file",
+    "quote",
+    "reason",
+    "breaks"
+  ],
   "additionalProperties": false
 }

@@ -72,18 +72,49 @@ fn hunk(line: &str) -> Option<((u32, u32), (u32, u32))> {
     Some((range(old)?, range(new)?))
 }
 
-/// Whether `file` is in the diff and `line` lies in one of its hunks (in the new file or the old).
+/// Whether `file` is in the diff and `line` is one of its added lines (numbered in the new file).
+/// A file the change only removes from has no added line: there, a line inside one of its hunks
+/// (in the new file or the old) is the removal named.
 pub fn has_line(diff: &str, file: &str, line: u32) -> bool {
     let wanted = file.trim().trim_start_matches("./");
     if wanted.is_empty() || line == 0 {
         return false;
     }
     sections(diff).iter().filter(|section| section.file == wanted).any(|section| {
+        let added = added_lines(section.text);
+        if !added.is_empty() {
+            return added.contains(&line);
+        }
         section.text.lines().filter_map(hunk).any(|((old, old_count), (new, new_count))| {
             let within = |start: u32, count: u32| line >= start && line < start + count.max(1);
             within(new, new_count) || within(old, old_count)
         })
     })
+}
+
+/// The new file's numbers of the lines a file's part of a diff adds.
+fn added_lines(text: &str) -> Vec<u32> {
+    let mut added = Vec::new();
+    // Lines still to come in the open hunk (old side, new side), and the next new line's number.
+    let (mut old_left, mut new_left, mut next) = (0u32, 0u32, 0u32);
+    for line in text.lines() {
+        if old_left == 0 && new_left == 0 {
+            if let Some((old, new)) = hunk(line) {
+                (old_left, new_left, next) = (old.1, new.1, new.0);
+            }
+        } else if line.starts_with('+') {
+            added.push(next);
+            next += 1;
+            new_left = new_left.saturating_sub(1);
+        } else if line.starts_with('-') {
+            old_left = old_left.saturating_sub(1);
+        } else if !line.starts_with('\\') {
+            next += 1;
+            old_left = old_left.saturating_sub(1);
+            new_left = new_left.saturating_sub(1);
+        }
+    }
+    added
 }
 
 /// The files a diff changes.

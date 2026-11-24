@@ -134,7 +134,11 @@ impl Flow {
             return (name.to_owned(), Err(data.text("tool_bad_args", &[("name", name)])));
         };
         let text = |field: &str| arguments.get(field).and_then(Value::as_str).unwrap_or("").trim().to_owned();
-        let number = |field: &str| arguments.get(field).and_then(Value::as_u64).map(|value| value.min(u64::from(u32::MAX)) as u32);
+        // A small model often writes a number as text ("40"): it is the number.
+        let number = |field: &str| {
+            let value = arguments.get(field)?;
+            value.as_u64().or_else(|| value.as_str().and_then(|text| text.trim().parse::<u64>().ok())).map(|value| value.min(u64::from(u32::MAX)) as u32)
+        };
         let mut params = DiscoverParams { repo: repo.to_owned(), via: via.to_owned(), ..DiscoverParams::default() };
         let (method, label) = match name {
             "read" => {
@@ -255,10 +259,12 @@ impl Flow {
             Err(error) => (Vec::new(), Some(error.message)),
         };
 
+        // Read but nothing found (the model read nothing): planned as blind, and the note says so.
+        let unread = blind.is_none() && found.is_empty();
         let reads = if blind.is_some() {
             data.text("plan_blind", &[])
-        } else if found.is_empty() {
-            String::new()
+        } else if unread {
+            data.text("plan_unread", &[])
         } else {
             let items: Vec<String> = found
                 .iter()
@@ -296,6 +302,9 @@ impl Flow {
             // There is no cautious plan: nothing is returned as one.
             Err(unusable) => return Err(RpcError::new(codes::UNAVAILABLE, data.text("plan_failed", &[("problem", &unusable.problem)]))),
         };
+        if unread {
+            plan.note = format!("{} {}", data.text("note_unread", &[]), plan.note).trim().to_owned();
+        }
         if let Some(error) = blind {
             plan.note = format!("{} {}", data.text("note_blind", &[("error", &error)]), plan.note).trim().to_owned();
         }

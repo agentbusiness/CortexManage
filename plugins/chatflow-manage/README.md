@@ -43,7 +43,7 @@ error, never an answer.
 
 1. `model.count` sizes the prompt.
 2. `mesh.claim {kind: "model", tag, session_id: <key>, foreground: false, tokens}` takes one use of
-   the best free model with the stage's tag (`coding`), waiting when none is free. The frame then
+   the best free model with the stage's tag (`office`, the Gemma), waiting when none is free. The frame then
    routes the key's calls there. Background: a person's turn goes first.
 3. `model.chat` runs with `cache_key: <key>`, the stage's grammar, greedy sampling, a token limit.
 4. `mesh.release`, and `mesh.place.end` when the question is over.

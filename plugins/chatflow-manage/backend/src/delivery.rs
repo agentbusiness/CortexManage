@@ -132,6 +132,7 @@ impl Flow {
         // the answer.
         let evidence = blocks(&[
             data.text("block_app", &[("name", &params.repo_name)]),
+            data.text("delivery_main", &[("main", &params.main)]),
             data.text("delivery_github", &[("github", params.github.trim())]),
             if items.is_empty() { String::new() } else { format!("{}\n{}", data.text("delivery_found", &[]), items.join("\n\n")) },
         ]);

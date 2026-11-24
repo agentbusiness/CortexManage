@@ -42,8 +42,9 @@ This file is written by hand until the charter plugin prints it (`docs/specs/03-
 1. Nothing is built, run, committed or pushed in a managed repository unless the owner asked. A
    package that passed its hold in CortexManage is the owner's ask for that package: its checks,
    its proving build, its commits on its own branch, its landing, and its release by the train.
-2. One model for everything: the shared Qwen (`coding` tag), claimed in the background so a
-   person's turn in another app always goes first.
+2. The manager's model is the shared office Gemma (`office` tag); builders use the Qwen (`coding`).
+   Claimed in the background so a person's turn in another app always goes first. Prompts are
+   written for the small model: short, one decision per question.
 3. The ladder is steer once, restart once, then a person. A steer is a fixed sentence that ends
    with the next step.
 4. Walks are the manager's records. They are never sent to a builder and never written into a

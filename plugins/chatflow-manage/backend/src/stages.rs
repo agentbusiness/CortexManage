@@ -202,7 +202,7 @@ fn flag(value: &Value, field: &str) -> bool {
 /// ASSESS: the answer's fields as the contract names them, with the question ids the host gives.
 /// No check yet: [`checked_assess`] does that.
 pub fn read_assess(value: &Value, request: &str) -> Result<AssessedParams, String> {
-    let questions = value
+    let questions: Vec<Question> = value
         .get("questions")
         .and_then(Value::as_array)
         .map(|items| {
@@ -228,13 +228,15 @@ pub fn read_assess(value: &Value, request: &str) -> Result<AssessedParams, Strin
     }
     Ok(AssessedParams {
         request: request.to_owned(),
-        actionable: flag(value, "actionable"),
+        // A request waits for a person exactly when it has questions; it is urgent exactly when a
+        // sentence says so (the host checks the quote).
+        actionable: questions.is_empty(),
         questions,
         title: text_of(value, "title"),
         kind: text_of(value, "kind"),
         tier: Tier::parse(&text_of(value, "tier")).ok_or("`tier` must be safe, minor or major")?,
         surface,
-        urgent: flag(value, "urgent"),
+        urgent: !text_of(value, "urgent_because").is_empty(),
         because: text_of(value, "because"),
         urgent_because: text_of(value, "urgent_because"),
         major_because: text_of(value, "major_because"),
@@ -249,13 +251,10 @@ fn checked_assess(mut answer: AssessedParams, text: &str) -> Result<AssessedPara
         return Err("`because` is not a sentence of the request. Copy one sentence of the request word for word.".into());
     }
     if answer.tier == Tier::Major && !quoted(&answer.major_because, text) {
-        return Err("`tier` is major but `major_because` is not a sentence of the request. Copy the one that says an interface, stored data, security or several places change, or choose minor.".into());
+        return Err("`tier` is major but `major_because` is not a sentence of the request. Copy the one that asks to change an interface, stored data, security or several places, or leave it empty and choose minor.".into());
     }
     if answer.urgent && !quoted(&answer.urgent_because, text) {
-        return Err("`urgent_because` is not a sentence of the request. Copy one word for word, or leave it empty and set `urgent` to false.".into());
-    }
-    if !answer.actionable && answer.questions.is_empty() {
-        return Err("`actionable` is false but `questions` is empty. Write the question, or set `actionable` to true.".into());
+        return Err("`urgent_because` is not a sentence of the request. Copy one word for word, or leave it empty.".into());
     }
     if !answer.urgent {
         answer.urgent_because.clear();
@@ -282,8 +281,18 @@ pub fn read_match(value: &Value) -> Result<MatchAnswer, String> {
     serde_json::from_value(value.clone()).map_err(|error| error.to_string())
 }
 
+/// VALIDATE's answers; the verdict is the host's (see `Flow::validate`), never the model's.
 pub fn read_validate(value: &Value) -> Result<ValidateAnswer, String> {
-    serde_json::from_value(value.clone()).map_err(|error| error.to_string())
+    let answer = |field: &str| value.get(field).and_then(Value::as_bool).ok_or_else(|| format!("`{field}` must be true or false"));
+    Ok(ValidateAnswer {
+        necessary: answer("necessary")?,
+        sensible: answer("sensible")?,
+        fits: answer("fits")?,
+        provable: answer("provable")?,
+        standard_safe: true,
+        verdict: String::new(),
+        reason: text_of(value, "reason"),
+    })
 }
 
 pub fn read_drift(value: &Value) -> Result<DriftAnswer, String> {
@@ -336,7 +345,12 @@ impl Flow {
             let ask = Ask { stage: asked.stage, config, key: &key, messages: vec![ChatMessage::new("system", data.system(config)), ChatMessage::new("user", user)], tools: Vec::new(), grammar: Some(grammar.clone()) };
             let result = llm::chat(ctx, data, ask, cancel).await;
             llm::end(ctx, &key).await;
-            let shaped = parse(&result?.content).and_then(|value| asked.shape.check(&value).map(|()| value));
+            let result = result?;
+            // An answer the token limit cut off is told so: asked again the same way, it would be
+            // cut off again.
+            let cut = matches!(result.finish_reason.as_str(), "length" | "repeated");
+            let shaped = parse(&result.content).and_then(|value| asked.shape.check(&value).map(|()| value));
+            let shaped = if cut { shaped.map_err(|_| data.text("cut_off", &[])) } else { shaped };
             let outcome = shaped.and_then(|value| {
                 let outcome = read(&value);
                 last = Some(value);
@@ -413,16 +427,15 @@ impl Flow {
             Err(_) => return Ok(ValidateAnswer { necessary: false, sensible: false, fits: false, provable: false, standard_safe: !params.touches_standard, verdict: "ask".into(), reason: data.text("validate_unreadable", &[]) }),
         };
         // What the host knows, it does not ask: a point on a standard file is not standard-safe.
-        if params.touches_standard {
-            answer.standard_safe = false;
-        }
+        answer.standard_safe = !params.touches_standard;
+        // The verdict follows from the answers: kept when all hold, cut when the request does not
+        // ask for it, a person's otherwise. A small model's own verdict was the one answer no
+        // check could hold to anything.
         let all = answer.necessary && answer.sensible && answer.fits && answer.provable && answer.standard_safe;
+        answer.verdict = if all { "keep" } else if !answer.necessary { "cut" } else { "ask" }.into();
         if answer.reason.trim().is_empty() {
             answer.verdict = "ask".into();
             answer.reason = data.text("validate_no_reason", &[]);
-        } else if answer.verdict == "keep" && !all {
-            answer.verdict = "ask".into();
-            answer.reason = format!("{} {}", data.text("validate_contradiction", &[]), answer.reason.trim());
         }
         Ok(answer)
     }

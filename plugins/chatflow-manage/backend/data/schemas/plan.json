@@ -11,11 +11,11 @@
     },
     "approach": {
       "type": "string",
-      "maxLength": 3000
+      "maxLength": 1200
     },
     "architecture": {
       "type": "string",
-      "maxLength": 3000
+      "maxLength": 1500
     },
     "risks": {
       "type": "array",
@@ -36,7 +36,7 @@
           },
           "brief": {
             "type": "string",
-            "maxLength": 3000
+            "maxLength": 1200
           },
           "known": {
             "type": "array",
@@ -44,14 +44,15 @@
               "type": "string",
               "maxLength": 300
             },
-            "maxItems": 8
+            "maxItems": 6
           },
           "rules": {
             "type": "array",
             "items": {
               "type": "string",
               "maxLength": 200
-            }
+            },
+            "maxItems": 4
           },
           "depends_on": {
             "type": "array",
@@ -67,7 +68,8 @@
             "items": {
               "type": "string",
               "maxLength": 300
-            }
+            },
+            "maxItems": 12
           },
           "walks": {
             "type": "array",

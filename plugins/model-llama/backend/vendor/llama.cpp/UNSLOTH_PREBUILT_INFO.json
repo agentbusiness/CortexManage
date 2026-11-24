@@ -1,0 +1,8 @@
+{
+  "source": "published-source",
+  "source_repo": "unslothai/llama.cpp",
+  "release_tag": "b12347-mix-241a0f3",
+  "source_commit": "c2cf5f983a01bc2ea7a5d68a7ce4fb171e6fe335",
+  "source_asset": "llama.cpp-source-commit-c2cf5f983a01bc2ea7a5d68a7ce4fb171e6fe335.tar.gz",
+  "source_sha256": "bc280e70bba1a486b8f294ce1b0b4a255d67efbd9fb3db2e58dba920d94d5be0"
+}
