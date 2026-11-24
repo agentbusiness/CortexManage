@@ -10,7 +10,7 @@
  * the hourly change sum five minutes).
  */
 
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { errorMessage, useClient, useQuery, type Client } from '@cortex/sdk';
 import { CHANGED, loadFailure } from './manage';
 
@@ -178,10 +178,10 @@ type Flow = ReturnType<typeof useFlow>;
 type Filters = Record<string, string | null>;
 
 const ERROR_FACETS: Array<[string, string]> = [
-  ['kind', 'kind'],
-  ['app', 'app'],
-  ['source', 'source'],
   ['area', 'area'],
+  ['app', 'app'],
+  ['kind', 'kind'],
+  ['source', 'source'],
   ['version', 'version'],
   ['computer', 'computer'],
 ];
@@ -228,12 +228,16 @@ export function FlowPage({ table, flow, openRequest, onView }: { table: Table; f
   const { answer, setSpan } = flow;
   const [filters, setFilters] = useState<Filters>({});
   const [open, setOpen] = useState<string | null>(null);
+  const [slice, setSlice] = useState<Range | null>(null);
   useEffect(() => {
     setFilters({});
     setOpen(null);
   }, [table]);
   const data = answer.data;
   const span: Span | null = flow.span ?? (data ? { from: data.today, to: data.today } : null);
+  // A stretch belongs to the days it was picked in.
+  useEffect(() => setSlice(null), [table, span?.from, span?.to]);
+  const parts = useMemo(() => partsOf(table, data?.rows ?? []), [table, data]);
 
   /* ← → move the chosen day */
   useEffect(() => {
@@ -274,29 +278,42 @@ export function FlowPage({ table, flow, openRequest, onView }: { table: Table; f
     return <div className="cm-flow">{views}<p className="cm-line">Reading the reports…</p></div>;
   }
   // The answer is for the days asked; while another span loads, the last one stays.
-  const rows = filterRows(data.rows, filters);
+  const all = slice ? data.rows.filter((row) => inRange(row, slice)) : data.rows;
+  const rows = filterRows(all, filters);
   const chips = Object.entries(filters).filter(([, value]) => value != null) as Array<[string, string]>;
+  const zoom: Zoom = { slice, set: (next) => { setOpen(null); setSlice(next); } };
+  const shared = { rows, all, span: span!, range: slice ?? spanRange(span!), parts, zoom, filters, toggle, open, setOpen };
   return (
     <div className="cm-flow" data-table={table}>
       {views}
       <Days table={table} days={data.days} span={span!} onPick={pick} />
-      {chips.length > 0 && (
+      {(chips.length > 0 || slice) && (
         <div className="cm-flow-chain">
+          {slice && (
+            <button type="button" className="detent" aria-pressed="true" onClick={() => zoom.set(null)}>
+              time · {rangeLabel(slice)} <span className="k">✕</span>
+            </button>
+          )}
           {chips.map(([field, value]) => (
             <button key={field} type="button" className="detent" aria-pressed="true" onClick={() => toggle(field, value)}>
-              {(table === 'models' ? FIELD_LABELS[field] : undefined) ?? field} · {field === kindField(table) ? kindLabel(table, value) : value} <span className="k">✕</span>
+              {(table === 'models' ? FIELD_LABELS[field] : undefined) ?? field} · {field === kindField(table) ? kindLabel(table, value) : field === parts.field ? partLabel(value) : value} <span className="k">✕</span>
             </button>
           ))}
         </div>
       )}
       {table === 'errors'
-        ? <ErrorBody rows={rows} all={data.rows} span={span!} filters={filters} toggle={toggle} open={open} setOpen={setOpen}
-            requests={data.requests ?? {}} openRequest={openRequest} refresh={() => void answer.refresh()} />
+        ? <ErrorBody {...shared} requests={data.requests ?? {}} openRequest={openRequest} refresh={() => void answer.refresh()} />
         : table === 'models'
-          ? <ModelBody rows={rows} all={data.rows} span={span!} filters={filters} toggle={toggle} open={open} setOpen={setOpen} />
-          : <CallBody rows={rows} all={data.rows} span={span!} filters={filters} toggle={toggle} open={open} setOpen={setOpen} />}
+          ? <ModelBody {...shared} />
+          : <CallBody {...shared} />}
     </div>
   );
+}
+
+/** The stretch of the chosen days picked on the timeline, and how to change it. */
+interface Zoom {
+  slice: Range | null;
+  set: (slice: Range | null) => void;
 }
 
 interface BodyProps {
@@ -304,8 +321,13 @@ interface BodyProps {
   openRequest?: (request: RequestLink) => void;
   refresh?: () => void;
   rows: Row[];
+  /** The rows of the stretch shown, before the filters. */
   all: Row[];
   span: Span;
+  /** The time shown: the stretch picked, else the chosen days. */
+  range: Range;
+  parts: Parts;
+  zoom: Zoom;
   filters: Filters;
   toggle: (field: string, value: string) => void;
   open: string | null;
@@ -366,84 +388,196 @@ function Section({ title, count, tools, children }: { title: string; count?: str
   );
 }
 
-/** Stacked columns per slice of the days, one colour per kind. */
-function Timeline({ table, rows, span, compact, onKind }: { table: Table; rows: Row[]; span: Span; compact?: boolean; onKind?: (kind: string) => void }) {
-  const from = dayStartMs(span.from);
-  const to = dayStartMs(span.to) + DAY_MS;
-  const days = Math.round((to - from) / DAY_MS);
-  const count = compact ? 96 : days === 1 ? 288 : Math.min(672, days * 96);
-  const field = kindField(table);
+/** A stretch of time in milliseconds, `to` not included. */
+interface Range {
+  from: number;
+  to: number;
+}
+
+const FIVE_MIN = 300_000;
+
+const spanRange = (span: Span): Range => ({ from: dayStartMs(span.from), to: dayStartMs(span.to) + DAY_MS });
+
+const inRange = (row: Row, range: Range) => row.first_at_ms >= range.from && row.first_at_ms < range.to;
+
+/** Columns drawn: five minutes each up to a day, fifteen past it. */
+function sliceCount(range: Range, compact?: boolean): number {
+  const ms = range.to - range.from;
+  const count = ms <= DAY_MS ? Math.max(1, Math.round(ms / FIVE_MIN)) : Math.min(672, Math.round((ms / DAY_MS) * 96));
+  return compact ? Math.min(96, count) : count;
+}
+
+const TICK_STEPS = [FIVE_MIN, 3 * FIVE_MIN, 6 * FIVE_MIN, 3_600_000, 3 * 3_600_000, 6 * 3_600_000, 12 * 3_600_000, DAY_MS];
+
+function ticksOf(range: Range): { step: number; ticks: number[] } {
+  const ms = range.to - range.from;
+  const step = TICK_STEPS.find((candidate) => ms / candidate <= 8) ?? DAY_MS;
+  const ticks: number[] = [];
+  for (let t = Math.ceil(range.from / step) * step; t <= range.to; t += step) ticks.push(t);
+  return { step, ticks };
+}
+
+function tickLabel(t: number, step: number, range: Range): string {
+  if (step >= DAY_MS) return String(new Date(t).getUTCDate());
+  return range.to - range.from <= DAY_MS ? fmtClock(t) : `${new Date(t).getUTCDate()} ${fmtClock(t)}`;
+}
+
+function rangeLabel(range: Range): string {
+  const day = (ms: number) => dayLabel(new Date(ms).toISOString().slice(0, 10));
+  const sameDay = day(range.from) === day(range.to - 1);
+  return sameDay ? `${fmtClock(range.from)}–${fmtClock(range.to)}` : `${day(range.from)} ${fmtClock(range.from)} – ${day(range.to)} ${fmtClock(range.to)}`;
+}
+
+// ---- parts --------------------------------------------------------------------------------------
+
+/** The field the columns are stacked by: the area that failed, the part that served. */
+const partField = (table: Table) => (table === 'errors' ? 'area' : 'part');
+
+const partLabel = (value: string) => value || 'none';
+
+/** The chart hues, the first for the part with the most. */
+const PART_HUES = ['s0', 's1', 's2', 's3', 's4', 's5', 'q0', 'q1', 'q2', 'q3', 'q4'].map((hue) => `var(--cc-chart-${hue})`);
+
+/** Each part its hue, kept while the page narrows so a colour keeps its meaning. */
+interface Parts {
+  field: string;
+  order: string[];
+  hue: Map<string, string>;
+}
+
+function partsOf(table: Table, rows: Row[]): Parts {
+  const field = partField(table);
+  const sums = new Map<string, number>();
+  for (const row of rows) sums.set(str(row[field]), (sums.get(str(row[field])) ?? 0) + (num(row.count) || 1));
+  const order = [...sums.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([value]) => value);
+  return { field, order, hue: new Map(order.map((value, index) => [value, PART_HUES[index] ?? 'var(--cc-chart-context)'])) };
+}
+
+const hueStyle = (parts: Parts, value: string) => ({ '--k': parts.hue.get(value) ?? 'var(--cc-chart-context)' }) as CSSProperties;
+
+/** Stacked columns over the time shown, one colour per part. Dragging across it picks a stretch. */
+function Timeline({ table, rows, range, parts, compact, onSelect }: { table: Table; rows: Row[]; range: Range; parts: Parts; compact?: boolean; onSelect?: (range: Range) => void }) {
+  const { from, to } = range;
+  const count = sliceCount(range, compact);
+  const width = (to - from) / count;
   const slices = useMemo(() => {
-    const width = (to - from) / count;
-    const out = Array.from({ length: count }, (_, index) => ({ t0: from + index * width, t1: from + (index + 1) * width, total: 0, byKind: new Map<string, number>() }));
+    const out = Array.from({ length: count }, (_, index) => ({ t0: from + index * width, t1: from + (index + 1) * width, total: 0, byPart: new Map<string, number>() }));
     for (const row of rows) {
-      const index = Math.floor((row.first_at_ms - from) / width);
-      const slice = out[index];
+      const slice = out[Math.floor((row.first_at_ms - from) / width)];
       if (!slice) continue;
       // A model call kept before calls were summed has no count: it is one call.
       const n = num(row.count) || 1;
       slice.total += n;
-      const kind = str(row[field]);
-      slice.byKind.set(kind, (slice.byKind.get(kind) ?? 0) + n);
+      const part = str(row[parts.field]);
+      slice.byPart.set(part, (slice.byPart.get(part) ?? 0) + n);
     }
     return out;
-  }, [rows, from, to, count, field]);
+  }, [rows, from, width, count, parts.field]);
+  const area = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
+  const at = (event: ReactPointerEvent) => {
+    const box = area.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+  };
+  const finish = (event: ReactPointerEvent) => {
+    if (!drag) return;
+    setDrag(null);
+    const lo = Math.min(drag.a, at(event));
+    const hi = Math.max(drag.a, at(event));
+    // A click is not a stretch.
+    if ((hi - lo) * area.current!.getBoundingClientRect().width < 4) return;
+    const first = Math.floor(lo * count);
+    const last = Math.max(first + 1, Math.ceil(hi * count));
+    onSelect?.({ from: from + first * width, to: from + last * width });
+  };
   const max = Math.max(1, ...slices.map((slice) => slice.total));
   const H = compact ? 60 : 200;
   const w = 1000 / count;
-  const ticks: number[] = [];
-  const step = days === 1 ? 3 * 3_600_000 : days <= 3 ? 12 * 3_600_000 : DAY_MS;
-  for (let t = from; t <= to; t += step) ticks.push(t);
+  const { step, ticks } = ticksOf(range);
   const what = unitOf(table);
+  const order = (part: string) => {
+    const index = parts.order.indexOf(part);
+    return index === -1 ? parts.order.length : index;
+  };
   return (
     <div className={`cm-flow-plot${compact ? ' cf-compact' : ''}`}>
       <span className="cf-max num">{fmtInt(max)}</span>
-      <svg viewBox={`0 0 1000 ${H}`} preserveAspectRatio="none" role="img" aria-label={`${what} by time`}>
-        <line className="cf-grid" x1="0" x2="1000" y1="0.5" y2="0.5" />
-        <line className="cf-grid cf-major" x1="0" x2="1000" y1={H - 0.5} y2={H - 0.5} />
-        {slices.map((slice, index) => {
-          if (!slice.total) return null;
-          let base = H;
-          const kinds = [...slice.byKind.entries()].sort((a, b) => kindOrder(table, a[0]) - kindOrder(table, b[0]));
-          return (
-            <g key={index}>
-              <title>{`${fmtClock(slice.t0)}–${fmtClock(slice.t1)} UTC · ${fmtInt(slice.total)} ${what}\n${kinds.map(([kind, n]) => `${kindLabel(table, kind)} ${fmtInt(n)}`).join(' · ')}`}</title>
-              {kinds.map(([kind, n]) => {
-                const h = Math.max(1, (n / max) * (H - 4));
-                base -= h;
-                return <rect key={kind} className={`${kindClass(table, kind)}${onKind ? ' cf-hit' : ''}`} x={index * w} y={base} width={Math.max(0.6, w * 0.8)} height={h} onClick={onKind ? () => onKind(kind) : undefined} />;
-              })}
-            </g>
-          );
-        })}
-      </svg>
+      <div ref={area} className={`cf-area${onSelect ? ' cf-brushable' : ''}`}
+        onPointerDown={onSelect ? (event) => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const f = at(event);
+          setDrag({ a: f, b: f });
+        } : undefined}
+        onPointerMove={drag ? (event) => setDrag({ a: drag.a, b: at(event) }) : undefined}
+        onPointerUp={drag ? finish : undefined}
+        onPointerCancel={() => setDrag(null)}>
+        <svg viewBox={`0 0 1000 ${H}`} preserveAspectRatio="none" role="img" aria-label={`${what} by time`}>
+          <line className="cf-grid" x1="0" x2="1000" y1="0.5" y2="0.5" />
+          <line className="cf-grid cf-major" x1="0" x2="1000" y1={H - 0.5} y2={H - 0.5} />
+          {slices.map((slice, index) => {
+            if (!slice.total) return null;
+            let base = H;
+            const stack = [...slice.byPart.entries()].sort((a, b) => order(a[0]) - order(b[0]));
+            return (
+              <g key={index}>
+                <title>{`${fmtClock(slice.t0)}–${fmtClock(slice.t1)} UTC · ${fmtInt(slice.total)} ${what}\n${stack.map(([part, n]) => `${partLabel(part)} ${fmtInt(n)}`).join(' · ')}`}</title>
+                {stack.map(([part, n]) => {
+                  const h = Math.max(1, (n / max) * (H - 4));
+                  base -= h;
+                  return <rect key={part} style={hueStyle(parts, part)} x={index * w} y={base} width={Math.max(0.6, w * 0.8)} height={h} />;
+                })}
+              </g>
+            );
+          })}
+        </svg>
+        {drag && <span className="cf-brush" style={{ left: `${Math.min(drag.a, drag.b) * 100}%`, width: `${Math.abs(drag.b - drag.a) * 100}%` }} />}
+      </div>
       {!compact && (
         <div className="cf-axis">
-          {ticks.map((t) => (
-            <span key={t} className="num" style={{ left: `${((t - from) / (to - from)) * 100}%` }}>
-              {days === 1 ? fmtClock(t) : days <= 3 ? `${new Date(t).getUTCDate()} ${fmtClock(t)}` : String(new Date(t).getUTCDate())}
-            </span>
-          ))}
+          {ticks.map((t) => {
+            const pos = (t - from) / (to - from);
+            return (
+              <span key={t} className="num" style={{ left: `${pos * 100}%`, transform: pos < 0.03 ? 'none' : pos > 0.97 ? 'translateX(-100%)' : 'translateX(-50%)' }}>
+                {tickLabel(t, step, range)}
+              </span>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-/** The kinds there are; each one filters the page to it, pressed again shows them all. */
-function Legend({ table, all, filters, toggle }: { table: Table; all: Row[]; filters: Filters; toggle: (field: string, value: string) => void }) {
-  const field = kindField(table);
-  const kinds = [...new Set(all.map((row) => str(row[field])))].sort((a, b) => kindOrder(table, a) - kindOrder(table, b));
-  if (kinds.length === 0) return null;
-  const chosen = filters[field] ?? null;
+/** The parts there are; each one filters the page to it, pressed again shows them all. */
+function Legend({ parts, all, filters, toggle }: { parts: Parts; all: Row[]; filters: Filters; toggle: (field: string, value: string) => void }) {
+  const present = new Set(all.map((row) => str(row[parts.field])));
+  const shown = parts.order.filter((part) => present.has(part));
+  if (shown.length === 0) return null;
+  const chosen = filters[parts.field] ?? null;
   return (
     <div className="cm-flow-legend">
-      {kinds.map((kind) => (
-        <button key={kind} type="button" className={`cf-key-btn${chosen === kind ? ' cf-on' : ''}${chosen && chosen !== kind ? ' cf-off' : ''}`} aria-pressed={chosen === kind} onClick={() => toggle(field, kind)}>
-          <i className={`cf-sw ${kindClass(table, kind)}`} />{kindLabel(table, kind)}
+      {shown.map((part) => (
+        <button key={part} type="button" className={`cf-key-btn${chosen === part ? ' cf-on' : ''}${chosen && chosen !== part ? ' cf-off' : ''}`} aria-pressed={chosen === part} onClick={() => toggle(parts.field, part)}>
+          <i className="cf-sw" style={hueStyle(parts, part)} />{partLabel(part)}
         </button>
       ))}
     </div>
+  );
+}
+
+/** The When section: the columns, a way back to the whole span, the parts. */
+function When({ table, count, rows, all, range, parts, filters, toggle, zoom }: { table: Table; count: string; rows: Row[]; all: Row[]; range: Range; parts: Parts; filters: Filters; toggle: (field: string, value: string) => void; zoom: Zoom }) {
+  return (
+    <Section title="When" count={count} tools={zoom.slice ? (
+      <>
+        <span className="ap faint">{rangeLabel(zoom.slice)} UTC</span>
+        <button type="button" className="detent" onClick={() => zoom.set(null)}>Show all</button>
+      </>
+    ) : <span className="ap faint">drag across to pick a stretch</span>}>
+      <Timeline table={table} rows={rows} range={range} parts={parts} onSelect={zoom.set} />
+      <Legend parts={parts} all={all} filters={filters} toggle={toggle} />
+    </Section>
   );
 }
 
@@ -534,7 +668,7 @@ function places(rows: Row[]): Place[] {
     .sort((a, b) => b.count - a.count || b.last - a.last || a.location.localeCompare(b.location));
 }
 
-function ErrorBody({ rows, all, span, filters, toggle, open, setOpen, requests = {}, openRequest, refresh }: BodyProps) {
+function ErrorBody({ rows, all, span, range, parts, zoom, filters, toggle, open, setOpen, requests = {}, openRequest, refresh }: BodyProps) {
   const fig = useMemo(() => {
     const f = { failures: 0, places: new Set<string>(), server: 0, iface: 0, panics: 0, floods: 0, versions: new Set<string>() };
     for (const row of rows) {
@@ -565,10 +699,7 @@ function ErrorBody({ rows, all, span, filters, toggle, open, setOpen, requests =
         <Fig label="Versions" value={fmtInt(versions.length)} note={versions.join(', ')} />
         <Fig label="Days" value={fmtInt(days)} />
       </div>
-      <Section title="When" count={fmtInt(rows.reduce((sum, row) => sum + row.count, 0))}>
-        <Timeline table="errors" rows={rows} span={span} onKind={(kind) => toggle('kind', kind)} />
-        <Legend table="errors" all={all} filters={filters} toggle={toggle} />
-      </Section>
+      <When table="errors" count={fmtInt(rows.reduce((sum, row) => sum + row.count, 0))} rows={rows} all={all} range={range} parts={parts} filters={filters} toggle={toggle} zoom={zoom} />
       <Section title="Filters">
         <Facets table="errors" facets={ERROR_FACETS} all={all} filters={filters} toggle={toggle} unit="failures" />
       </Section>
@@ -594,7 +725,7 @@ function ErrorBody({ rows, all, span, filters, toggle, open, setOpen, requests =
                       <td className="cf-msg cf-clip" title={place.message}>{place.message}</td>
                       <td className={requests[place.key]?.open ? '' : 'cf-dim'}>{requests[place.key] ? `${requests[place.key]!.id} · ${requests[place.key]!.state}` : '—'}</td>
                     </tr>
-                    {open === place.key && <tr><td colSpan={10} className="cf-detail-cell"><PlaceDetail place={place} span={span} request={requests[place.key]} openRequest={openRequest} refresh={refresh} /></td></tr>}
+                    {open === place.key && <tr><td colSpan={10} className="cf-detail-cell"><PlaceDetail place={place} span={span} range={range} parts={parts} request={requests[place.key]} openRequest={openRequest} refresh={refresh} /></td></tr>}
                   </Fragment>
                 ))}
               </tbody>
@@ -621,7 +752,7 @@ function scenarioLines(scenario: unknown): Array<[string, string]> {
   return out;
 }
 
-function PlaceDetail({ place, span, request, openRequest, refresh }: { place: Place; span: Span; request?: RequestLink | undefined; openRequest?: ((request: RequestLink) => void) | undefined; refresh?: (() => void) | undefined }) {
+function PlaceDetail({ place, span, range, parts, request, openRequest, refresh }: { place: Place; span: Span; range: Range; parts: Parts; request?: RequestLink | undefined; openRequest?: ((request: RequestLink) => void) | undefined; refresh?: (() => void) | undefined }) {
   const client = useClient();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
@@ -673,7 +804,7 @@ function PlaceDetail({ place, span, request, openRequest, refresh }: { place: Pl
         {request && !request.open && <button type="button" className="detent" onClick={() => openRequest?.(request)}>Open {request.id}</button>}
       </div>
       {failed && <p className="inline-error">{failed}</p>}
-      <Timeline table="errors" rows={place.rows} span={span} compact />
+      <Timeline table="errors" rows={place.rows} range={range} parts={parts} compact />
       <h5 className="ap faint">Messages</h5>
       {place.samples.map((sample, index) => <pre key={index}>{sample}</pre>)}
       <h5 className="ap faint">What was going on</h5>
@@ -759,7 +890,7 @@ function sortMethods(list: Method[], sort: Sort): Method[] {
   return [...list].sort((a, b) => by[sort](b) - by[sort](a) || b.calls - a.calls || a.method.localeCompare(b.method));
 }
 
-function CallBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProps) {
+function CallBody({ rows, all, span, range, parts, zoom, filters, toggle, open, setOpen }: BodyProps) {
   const [sort, setSort] = useState<Sort>('calls');
   const fig = useMemo(() => {
     const f = { calls: 0, failed: 0, totalUs: 0, maxUs: 0, prompt: 0, cached: 0, completion: 0, methods: new Set<string>(), versions: new Set<string>() };
@@ -793,10 +924,7 @@ function CallBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProps
         <Fig label="Versions" value={fmtInt(versions.length)} note={versions.join(', ')} />
         <Fig label="Days" value={fmtInt(days)} />
       </div>
-      <Section title="When" count={fmtInt(rows.reduce((sum, row) => sum + row.count, 0))}>
-        <Timeline table="calls" rows={rows} span={span} onKind={(kind) => toggle('outcome', kind)} />
-        <Legend table="calls" all={all} filters={filters} toggle={toggle} />
-      </Section>
+      <When table="calls" count={fmtInt(rows.reduce((sum, row) => sum + row.count, 0))} rows={rows} all={all} range={range} parts={parts} filters={filters} toggle={toggle} zoom={zoom} />
       <Section title="Filters">
         <Facets table="calls" facets={CALL_FACETS} all={all} filters={filters} toggle={toggle} unit="calls" />
       </Section>
@@ -825,7 +953,7 @@ function CallBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProps
                       <td className="cf-r num cf-dim">{entry.completion ? fmtTokens(entry.completion) : '—'}</td>
                       <td className="num cf-dim">{stamp(entry.last, span)}</td>
                     </tr>
-                    {open === entry.key && <tr><td colSpan={11} className="cf-detail-cell"><MethodDetail entry={entry} span={span} /></td></tr>}
+                    {open === entry.key && <tr><td colSpan={11} className="cf-detail-cell"><MethodDetail entry={entry} span={span} range={range} parts={parts} /></td></tr>}
                   </Fragment>
                 ))}
               </tbody>
@@ -837,7 +965,7 @@ function CallBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProps
   );
 }
 
-function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
+function MethodDetail({ entry, span, range, parts }: { entry: Method; span: Span; range: Range; parts: Parts }) {
   const outcomes = [...entry.outcomes.entries()].sort((a, b) => kindOrder('calls', a[0]) - kindOrder('calls', b[0]) || b[1] - a[1]);
   const byComputer = new Map<string, { calls: number; us: number }>();
   for (const row of entry.rows) {
@@ -856,7 +984,7 @@ function MethodDetail({ entry, span }: { entry: Method; span: Span }) {
         <span className="cf-k">served</span><span>{fmtInt(entry.calls)} times in {fmtInt(entry.rows.length)} summed rows, the last at {stamp(entry.last, span)} UTC</span>
         {(entry.prompt > 0 || entry.completion > 0) && <><span className="cf-k">tokens</span><span>{fmtInt(entry.prompt)} in ({fmtInt(entry.cached)} cached) · {fmtInt(entry.completion)} out</span></>}
       </div>
-      <Timeline table="calls" rows={entry.rows} span={span} compact />
+      <Timeline table="calls" rows={entry.rows} range={range} parts={parts} compact />
       <h5 className="ap faint">Where</h5>
       <div className="cf-kv">
         {[...byComputer.entries()].sort((a, b) => b[1].calls - a[1].calls).map(([key, value]) => (
@@ -885,7 +1013,7 @@ const callsOf = (row: Row) => num(row.count) || 1;
 /** The model as the row names it; a call no claim placed ran on the app's own model. */
 const modelOf = (row: Row) => str(row.model_id) || str(row.plugin) || 'own model';
 
-function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProps) {
+function ModelBody({ rows, all, span, range, parts, zoom, filters, toggle, open, setOpen }: BodyProps) {
   const fig = useMemo(() => {
     const f = { calls: 0, failed: 0, prompt: 0, cached: 0, completion: 0, reasoning: 0, wallMs: 0, decodeMs: 0, models: new Set<string>(), servers: new Set<string>() };
     for (const row of rows) {
@@ -919,10 +1047,7 @@ function ModelBody({ rows, all, span, filters, toggle, open, setOpen }: BodyProp
         <Fig label="Mean time" value={fig.calls ? fmtMs(fig.wallMs / fig.calls) : '—'} note={`${fmtMs(fig.wallMs)} in all`} />
         <Fig label="Days" value={fmtInt(days)} />
       </div>
-      <Section title="When" count={fmtInt(rows.length)}>
-        <Timeline table="models" rows={rows} span={span} onKind={(kind) => toggle('outcome', kind)} />
-        <Legend table="models" all={all} filters={filters} toggle={toggle} />
-      </Section>
+      <When table="models" count={fmtInt(rows.reduce((sum, row) => sum + callsOf(row), 0))} rows={rows} all={all} range={range} parts={parts} filters={filters} toggle={toggle} zoom={zoom} />
       <Section title="Who spends">
         <Facets table="models" facets={MODEL_FACETS} all={all} filters={filters} toggle={toggle} unit="tokens" weigh={tokensOf} format={fmtTokens} />
       </Section>
